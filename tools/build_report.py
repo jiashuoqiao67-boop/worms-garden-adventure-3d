@@ -357,8 +357,12 @@ def main():
     doc.add_paragraph(
         "This is an individual project. All code, tests, procedural textures, "
         "screenshots and the two extensions were implemented for this "
-        "assignment, reusing only the supplied 2D starting file's maze logic and "
-        "rules. Third-party usage is limited to the pinned course libraries "
+        "assignment, reusing only the supplied 2D starting file's maze logic "
+        "and rules. The colour palette and chase-camera easing were informed "
+        "by a reference course demonstration, but the renderer, transforms, "
+        "projections, rasterizer, Z-buffer and tests were written for this "
+        "assignment; the reference's painter-sort drawing path was not reused. "
+        "Third-party usage is limited to the pinned course libraries "
         "NumPy, Pillow and Pygame; no external art, sound, font or model asset "
         "is bundled.")
 
