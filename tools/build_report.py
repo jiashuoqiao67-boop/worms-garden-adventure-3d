@@ -43,10 +43,10 @@ def bullet(doc, text):
 def perf_table(doc):
     rows = [
         ("Preset", "Resolution", "Triangles", "Mean ms", "Median ms", "FPS"),
-        ("FAST", "672x420", "5286", "767.40", "765.98", "1.3"),
-        ("BALANCED", "1120x700", "5286", "828.65", "805.93", "1.2"),
-        ("HIGH", "1600x1000", "5286", "952.67", "929.62", "1.1"),
-        ("NATIVE", "1280x800", "5286", "858.89", "834.27", "1.2"),
+        ("FAST", "672x420", "6568", "890.15", "882.22", "1.1"),
+        ("BALANCED", "1120x700", "6568", "863.19", "857.93", "1.2"),
+        ("HIGH", "1600x1000", "6568", "1078.52", "1100.63", "0.9"),
+        ("NATIVE", "1280x800", "6568", "895.48", "904.85", "1.1"),
     ]
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
@@ -128,7 +128,9 @@ def main():
     # 3. Meshes, matrices, camera, projections
     doc.add_heading("3. Meshes, matrices, camera and projections", level=1)
     doc.add_paragraph(
-        "Geometry is built from low-poly cubes and a ground grid. Each Mesh "
+        "Geometry is built from low-poly cubes, a ground grid, and parametric "
+        "round solids (lat-long spheres/ellipsoids, ground discs and pennant "
+        "flags). Each Mesh "
         "stores world/local vertices, triangle index triples and optional UV "
         "coordinates. The ground is a cols x rows grid of upward-facing "
         "triangles; walls are axis-aligned boxes whose centre and size are "
@@ -288,15 +290,15 @@ def main():
     doc.add_paragraph(
         "Performance was measured offscreen with benchmark.py at four internal "
         "resolution presets, perspective overview view, five frames per preset. "
-        "The scene contains 5286 triangles.")
+        "The scene contains 6568 triangles.")
     perf_table(doc)
     doc.add_paragraph(
-        "The measured render time is roughly 0.77-0.95 seconds per frame, which "
+        "The measured render time is roughly 0.86-1.08 seconds per frame, which "
         "is below real-time. This is reported honestly: the renderer is a "
         "pure Python/NumPy software rasterizer, and the dominant cost is the "
         "per-triangle Python and NumPy object work (transform, clip, normal, "
         "shade, mesh setup) rather than pixel fill. Resolution has only a "
-        "moderate effect (about 24% from FAST to HIGH), which supports that "
+        "moderate effect (about 21% from FAST to HIGH), which supports that "
         "diagnosis. The hot path was optimized by caching the camera basis per "
         "instance, skipping the identity-model 4x4 multiply, and removing "
         "reduced per-triangle lighting normalization; a compiled JIT or a "
@@ -304,8 +306,9 @@ def main():
     add_image(doc, "07_low_res_672x420.png", 4.6, "Figure 10. Low internal resolution 672x420.")
     add_image(doc, "08_high_res_1600x1000.png", 4.6, "Figure 11. High internal resolution 1600x1000: finer wall edges.")
     doc.add_paragraph("Main limitations:")
-    bullet(doc, "Low-poly box models; the worm, birds and apples are cubes rather "
-                "than shaped meshes.")
+    bullet(doc, "Entities are coarse parametric solids (ellipsoids, spheres, "
+                "discs and a pennant flag) rather than cubes, but they remain "
+                "low-poly with flat facets and no detailed anatomy.")
     bullet(doc, "No antialiasing; polygon edges can look jagged at high zoom.")
     bullet(doc, "The area outside the maze grid is the framebuffer clear colour "
                 "(black), with no surrounding sky or ground plane.")

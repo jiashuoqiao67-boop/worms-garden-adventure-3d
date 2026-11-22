@@ -22,7 +22,10 @@ from PIL import Image
 
 from maze import COLS, ROWS, cell_center_3d, START_CELL, FINISH_CELL
 from game import build_level, apple_world_pos
-from geometry import ground_mesh, cube_mesh
+from geometry import (
+    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
+    bird_mesh, flag_mesh,
+)
 from materials import Material, make_grass_texture, make_stone_texture
 from renderer import Renderer
 from transforms import model_matrix
@@ -75,31 +78,28 @@ def render_state(state, view_mode=0, projection="perspective",
         renderer.draw_mesh(cam, wall, IDENTITY, mats["stone"])
 
     for hole in state["water_holes"]:
-        pad = cube_mesh((0.6, 0.06, 0.6), (hole[0], 0.03, hole[1]))
+        pad = disc_mesh(0.26, (hole[0], 0.03, hole[1]))
         renderer.draw_mesh(cam, pad, IDENTITY, mats["water"])
 
     renderer.draw_mesh(
-        cam, cube_mesh((0.2, 0.8, 0.2),
-                       cell_center_3d(START_CELL[0], START_CELL[1], 0.4)),
+        cam, flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0)),
         IDENTITY, mats["flag"])
     renderer.draw_mesh(
-        cam, cube_mesh((0.2, 0.8, 0.2),
-                       cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.4)),
+        cam, flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0)),
         IDENTITY, mats["red"])
 
     for apple in state["apples"]:
         if apple["collected"]:
             continue
         mat = mats["gold"] if apple["value"] == 100 else mats["red"]
-        renderer.draw_mesh(cam, cube_mesh((0.22, 0.22, 0.22),
-                                          apple_world_pos(apple, t)),
+        renderer.draw_mesh(cam, apple_mesh(apple_world_pos(apple, t)),
                            IDENTITY, mat)
 
     for bird in state["birds"]:
-        renderer.draw_mesh(cam, cube_mesh((0.3, 0.18, 0.3), bird["pos"]),
-                           IDENTITY, mats["bird"])
+        renderer.draw_mesh(cam, bird_mesh(bird["pos"]),
+                            IDENTITY, mats["bird"])
 
-    renderer.draw_mesh(cam, cube_mesh((0.34, 0.34, 0.34), state["position"]),
+    renderer.draw_mesh(cam, worm_mesh(state["position"]),
                        IDENTITY, mats["worm"])
     return renderer
 

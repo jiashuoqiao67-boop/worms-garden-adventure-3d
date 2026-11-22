@@ -21,7 +21,10 @@ from game import (
     build_level, update_birds, apple_world_pos, collect_apple,
     check_finish, reset_player, complete_level, restart_run, APPLE_COUNT,
 )
-from geometry import ground_mesh, cube_mesh
+from geometry import (
+    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
+    bird_mesh, flag_mesh,
+)
 from camera import Camera
 from renderer import Renderer
 from materials import Material, make_grass_texture, make_stone_texture
@@ -212,20 +215,21 @@ def main():
                           buf_w, buf_h)
 
         t0 = time.perf_counter()
+        tri_total = len(ground.triangles) + sum(len(w.triangles) for w in wall_meshes)
         renderer.draw_mesh(cam, ground, IDENTITY, grass_mat)
         for wall in wall_meshes:
             renderer.draw_mesh(cam, wall, IDENTITY, stone_mat)
 
-        # Water holes (flat blue pads)
+        # Water holes (flat blue discs on the ground)
         for hole in state["water_holes"]:
-            pad = cube_mesh((0.6, 0.06, 0.6), (hole[0], 0.03, hole[1]))
+            pad = disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.03, hole[1]))
+            tri_total += len(pad.triangles)
             renderer.draw_mesh(cam, pad, IDENTITY, water_mat)
 
-        # Start / finish flags (placeholder boxes)
-        start_flag = cube_mesh((0.2, 0.8, 0.2),
-                               cell_center_3d(START_CELL[0], START_CELL[1], 0.4))
-        finish_flag = cube_mesh((0.2, 0.8, 0.2),
-                                cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.4))
+        # Start / finish flags (pole + triangular pennant)
+        start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
+        finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
+        tri_total += len(start_flag.triangles) + len(finish_flag.triangles)
         renderer.draw_mesh(cam, start_flag, IDENTITY, flag_mat)
         renderer.draw_mesh(cam, finish_flag, IDENTITY, red_mat)
 
@@ -235,17 +239,20 @@ def main():
             if apple["collected"]:
                 continue
             mat = gold_mat if apple["value"] == 100 else red_mat
-            mesh = cube_mesh((0.22, 0.22, 0.22), apple_world_pos(apple, t))
+            mesh = apple_mesh(apple_world_pos(apple, t))
+            tri_total += len(mesh.triangles)
             renderer.draw_mesh(cam, mesh, IDENTITY, mat)
 
         # Birds
         for bird in state["birds"]:
-            mesh = cube_mesh((0.3, 0.18, 0.3), bird["pos"])
+            mesh = bird_mesh(bird["pos"])
+            tri_total += len(mesh.triangles)
             renderer.draw_mesh(cam, mesh, IDENTITY, bird_mat)
 
         # Worm
-        worm_mesh = cube_mesh((0.34, 0.34, 0.34), state["position"])
-        renderer.draw_mesh(cam, worm_mesh, IDENTITY, worm_mat)
+        worm_body = worm_mesh(state["position"])
+        tri_total += len(worm_body.triangles)
+        renderer.draw_mesh(cam, worm_body, IDENTITY, worm_mat)
 
         # Project particles; draw them after the framebuffer is blitted.
         particle_dots = []
@@ -255,9 +262,7 @@ def main():
                 particle_dots.append((p["color"], p["size"], sp))
         render_ms = (time.perf_counter() - t0) * 1000.0
 
-        triangle_count = (len(ground.triangles)
-                          + len(wall_meshes) * 12
-                          + 4 + len(state["apples"]) + len(state["birds"]) + 1)
+        triangle_count = tri_total
 
         # ---------------- Blit framebuffer + HUD ----------------
         surface = renderer.surface()

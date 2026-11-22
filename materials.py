@@ -106,10 +106,17 @@ def sample_bilinear(tex, u, v):
 # ---------------------------------------------------------------------------
 
 def face_normal(a, b, c):
-    """Unit face normal from world-space triangle vertices."""
+    """Unit face normal from world-space triangle vertices.
+
+    Degenerate triangles (zero area) fall back to an upward normal; the
+    rasterizer drops them later by its edge-area test.
+    """
     n = np.cross(np.asarray(b, float) - np.asarray(a, float),
                  np.asarray(c, float) - np.asarray(a, float))
-    return normalized(n)
+    length = np.linalg.norm(n)
+    if length < 1e-10:
+        return np.array([0.0, 1.0, 0.0])
+    return n / length
 
 
 def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE,

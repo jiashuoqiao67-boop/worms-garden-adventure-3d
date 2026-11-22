@@ -61,7 +61,7 @@ render time, triangle count, fog state and texture filter.
 | `main.py` | Pygame loop, events, input, frame timing, HUD |
 | `game.py` | Levels, apples, birds, score, timer, finish rules |
 | `maze.py` | Procedural maze generation, neighbours, coordinate conversion |
-| `geometry.py` | Cube / wall / ground meshes and UVs |
+| `geometry.py` | Cube / wall / ground meshes plus parametric spheres, ellipsoids, discs and flags |
 | `transforms.py` | 4×4 matrices and vector utilities |
 | `camera.py` | Camera basis, perspective/orthographic projection, near clip |
 | `renderer.py` | Triangle rasterization, Z-buffer, lighting, textures, fog |

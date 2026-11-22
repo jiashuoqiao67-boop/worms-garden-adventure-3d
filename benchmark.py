@@ -19,7 +19,10 @@ import pygame
 
 from maze import COLS, ROWS, cell_center_3d, START_CELL, FINISH_CELL
 from game import build_level, apple_world_pos
-from geometry import ground_mesh, cube_mesh
+from geometry import (
+    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
+    bird_mesh, flag_mesh,
+)
 from materials import Material, make_grass_texture, make_stone_texture
 from renderer import Renderer
 from transforms import model_matrix
@@ -39,14 +42,16 @@ def render_once(state, wall_meshes, ground, cam, mats, t):
     for wall in wall_meshes:
         renderer.draw_mesh(cam, wall, IDENTITY, stone_mat)
 
+    tri_total = len(ground.triangles) + sum(len(w.triangles) for w in wall_meshes)
+
     for hole in state["water_holes"]:
-        pad = cube_mesh((0.6, 0.06, 0.6), (hole[0], 0.03, hole[1]))
+        pad = disc_mesh(0.26, (hole[0], 0.03, hole[1]))
+        tri_total += len(pad.triangles)
         renderer.draw_mesh(cam, pad, IDENTITY, water_mat)
 
-    start_flag = cube_mesh((0.2, 0.8, 0.2),
-                           cell_center_3d(START_CELL[0], START_CELL[1], 0.4))
-    finish_flag = cube_mesh((0.2, 0.8, 0.2),
-                            cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.4))
+    start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
+    finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
+    tri_total += len(start_flag.triangles) + len(finish_flag.triangles)
     renderer.draw_mesh(cam, start_flag, IDENTITY, flag_mat)
     renderer.draw_mesh(cam, finish_flag, IDENTITY, red_mat)
 
@@ -54,22 +59,20 @@ def render_once(state, wall_meshes, ground, cam, mats, t):
         if apple["collected"]:
             continue
         mat = gold_mat if apple["value"] == 100 else red_mat
-        mesh = cube_mesh((0.22, 0.22, 0.22), apple_world_pos(apple, t))
+        mesh = apple_mesh(apple_world_pos(apple, t))
+        tri_total += len(mesh.triangles)
         renderer.draw_mesh(cam, mesh, IDENTITY, mat)
 
     for bird in state["birds"]:
-        mesh = cube_mesh((0.3, 0.18, 0.3), bird["pos"])
+        mesh = bird_mesh(bird["pos"])
+        tri_total += len(mesh.triangles)
         renderer.draw_mesh(cam, mesh, IDENTITY, bird_mat)
 
-    worm_mesh = cube_mesh((0.34, 0.34, 0.34), state["position"])
-    renderer.draw_mesh(cam, worm_mesh, IDENTITY, worm_mat)
+    worm_body = worm_mesh(state["position"])
+    tri_total += len(worm_body.triangles)
+    renderer.draw_mesh(cam, worm_body, IDENTITY, worm_mat)
 
-    triangle_count = (
-        len(ground.triangles)
-        + len(wall_meshes) * 12
-        + 4 + len(state["apples"]) + len(state["birds"]) + 1
-    )
-    return triangle_count
+    return tri_total
 
 
 def main():
