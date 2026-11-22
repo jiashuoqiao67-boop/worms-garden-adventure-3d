@@ -112,10 +112,11 @@ def main():
     start_time = time.time()
     render_ms = 0.0
     triangle_count = 0
+    renderer = None
 
     running = True
     while running:
-        dt = min(clock.tick(60) / 1000.0, 0.05)
+        dt = min(clock.tick(60) / 1000.0, 0.1)
 
         # ---------------- Events / input ----------------
         for event in pygame.event.get():
@@ -163,10 +164,12 @@ def main():
             direction[2] -= 1.0   # N = -Z
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             direction[2] += 1.0   # S = +Z
+        # Under the handbook camera basis the overview/follow view puts world
+        # -X on the screen right, so swap the X mapping to match screen intuition.
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            direction[0] -= 1.0   # W = -X
+            direction[0] += 1.0   # screen left
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            direction[0] += 1.0   # E = +X
+            direction[0] -= 1.0   # screen right
 
         # ---------------- Update world ----------------
         if np.linalg.norm(direction) > 0:
@@ -209,8 +212,12 @@ def main():
         # ---------------- Render 3D scene ----------------
         label, target_h = QUALITY_PRESETS[quality]
         buf_w, buf_h = fit_buffer(window_w, window_h, target_h)
-        renderer = Renderer(buf_w, buf_h,
-                            fog=FOG_CONFIG if fog_enabled else None)
+        fog_cfg = FOG_CONFIG if fog_enabled else None
+        if renderer is None or (renderer.width, renderer.height) != (buf_w, buf_h):
+            renderer = Renderer(buf_w, buf_h, fog=fog_cfg)
+        else:
+            renderer.fog = fog_cfg
+            renderer.clear()
         cam = make_camera(view_mode, state["position"], projection,
                           buf_w, buf_h)
 

@@ -43,10 +43,10 @@ def bullet(doc, text):
 def perf_table(doc):
     rows = [
         ("Preset", "Resolution", "Triangles", "Mean ms", "Median ms", "FPS"),
-        ("FAST", "672x420", "6568", "890.15", "882.22", "1.1"),
-        ("BALANCED", "1120x700", "6568", "863.19", "857.93", "1.2"),
-        ("HIGH", "1600x1000", "6568", "1078.52", "1100.63", "0.9"),
-        ("NATIVE", "1280x800", "6568", "895.48", "904.85", "1.1"),
+        ("FAST", "672x420", "6248", "954.41", "910.09", "1.1"),
+        ("BALANCED", "1120x700", "6248", "1067.59", "1070.37", "0.9"),
+        ("HIGH", "1600x1000", "6248", "1024.42", "1025.78", "1.0"),
+        ("NATIVE", "1280x800", "6248", "998.47", "992.22", "1.0"),
     ]
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
@@ -290,18 +290,19 @@ def main():
     doc.add_paragraph(
         "Performance was measured offscreen with benchmark.py at four internal "
         "resolution presets, perspective overview view, five frames per preset. "
-        "The scene contains 6568 triangles.")
+        "The scene contains 6248 triangles.")
     perf_table(doc)
     doc.add_paragraph(
-        "The measured render time is roughly 0.86-1.08 seconds per frame, which "
+        "The measured render time is roughly 0.91-1.07 seconds per frame, which "
         "is below real-time. This is reported honestly: the renderer is a "
         "pure Python/NumPy software rasterizer, and the dominant cost is the "
         "per-triangle Python and NumPy object work (transform, clip, normal, "
         "shade, mesh setup) rather than pixel fill. Resolution has only a "
-        "moderate effect (about 21% from FAST to HIGH), which supports that "
+        "moderate effect (about 13% from FAST to HIGH), which supports that "
         "diagnosis. The hot path was optimized by caching the camera basis per "
-        "instance, skipping the identity-model 4x4 multiply, and removing "
-        "reduced per-triangle lighting normalization; a compiled JIT or a "
+        "instance, skipping the identity-model 4x4 multiply, removing "
+        "reduced per-triangle lighting normalization, and reusing the "
+        "frame/depth buffers between frames; a compiled JIT or a "
         "spatial/caching pass would be the next optimization.")
     add_image(doc, "07_low_res_672x420.png", 4.6, "Figure 10. Low internal resolution 672x420.")
     add_image(doc, "08_high_res_1600x1000.png", 4.6, "Figure 11. High internal resolution 1600x1000: finer wall edges.")

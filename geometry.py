@@ -136,7 +136,7 @@ def _merge_meshes(meshes):
     return Mesh(vertices=vertices, triangles=triangles, uvs=uv)
 
 
-def sphere_mesh(radius=1.0, center=(0.0, 0.0, 0.0), rings=6, sectors=10,
+def sphere_mesh(radius=1.0, center=(0.0, 0.0, 0.0), rings=5, sectors=8,
                 scale=(1.0, 1.0, 1.0)) -> Mesh:
     """Lat-long sphere (ellipsoid when scale != 1), centred at `center`."""
     cx, cy, cz = center
@@ -189,16 +189,16 @@ def disc_mesh(radius=0.26, center=(0.0, 0.0, 0.0), segments=12) -> Mesh:
 def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
     """Worm: ellipsoid body with a round head (still a real 3D mesh)."""
     cx, cy, cz = center
-    body = sphere_mesh(1.0, (cx, cy, cz), rings=6, sectors=10,
-                       scale=(0.15, 0.15, 0.28))
-    head = sphere_mesh(0.15, (cx, cy + 0.02, cz + 0.24), rings=5, sectors=8)
+    body = sphere_mesh(1.0, (cx, cy, cz),
+                        scale=(0.15, 0.15, 0.28))
+    head = sphere_mesh(0.15, (cx, cy + 0.02, cz + 0.24))
     return _merge_meshes([body, head])
 
 
 def apple_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
     """Apple: round fruit plus a short stem on top."""
     cx, cy, cz = center
-    fruit = sphere_mesh(0.14, (cx, cy, cz), rings=6, sectors=10)
+    fruit = sphere_mesh(0.14, (cx, cy, cz))
     stem = cube_mesh((0.025, 0.09, 0.025), (cx, cy + 0.17, cz))
     return _merge_meshes([fruit, stem])
 
@@ -206,7 +206,7 @@ def apple_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
 def bird_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
     """Bird: ellipsoid body with two small wings."""
     cx, cy, cz = center
-    body = sphere_mesh(1.0, (cx, cy, cz), rings=6, sectors=10,
+    body = sphere_mesh(1.0, (cx, cy, cz),
                        scale=(0.17, 0.11, 0.15))
     wing_l = cube_mesh((0.13, 0.02, 0.09), (cx - 0.20, cy + 0.02, cz))
     wing_r = cube_mesh((0.13, 0.02, 0.09), (cx + 0.20, cy + 0.02, cz))
