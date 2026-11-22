@@ -21,6 +21,7 @@ WALL_THICKNESS = WALL_THICKNESS_WORLD   # 0.16
 class Mesh:
     vertices: np.ndarray      # (N, 3) float
     triangles: np.ndarray     # (M, 3) int
+    uvs: np.ndarray = None    # (N, 2) float, optional
 
 
 # ---------------------------------------------------------------------------
@@ -62,10 +63,13 @@ def cube_mesh(size=(1.0, 1.0, 1.0), center=(0.0, 0.0, 0.0)) -> Mesh:
 
 def ground_mesh(cols=3, rows=3, y=0.0) -> Mesh:
     vertices = []
+    uvs = []
     for r in range(rows + 1):
         for c in range(cols + 1):
             vertices.append([float(c), y, float(r)])
+            uvs.append([c / cols, r / rows])
     vertices = np.array(vertices, dtype=float)
+    uvs = np.array(uvs, dtype=float)
 
     triangles = []
     stride = cols + 1
@@ -79,7 +83,8 @@ def ground_mesh(cols=3, rows=3, y=0.0) -> Mesh:
             triangles.append((v00, v01, v11))
             triangles.append((v00, v11, v10))
 
-    return Mesh(vertices=vertices, triangles=np.array(triangles, dtype=int))
+    return Mesh(vertices=vertices, triangles=np.array(triangles, dtype=int),
+                uvs=uvs)
 
 
 # ---------------------------------------------------------------------------
