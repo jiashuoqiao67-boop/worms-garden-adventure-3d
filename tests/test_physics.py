@@ -81,7 +81,7 @@ def test_jump_cooldown():
 
 
 def test_water_only_when_grounded():
-    holes = [np.array([1.0, 0.0, 1.0])]
+    holes = [np.array([1.0, 1.0])]  # 2D footprint [x, z]
     pos_ground = np.array([1.0, GROUND_Y, 1.0])
     pos_air = np.array([1.0, 0.8, 1.0])
     assert hits_water(pos_ground, holes, 0.22, 0.26)

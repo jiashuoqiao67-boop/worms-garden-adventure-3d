@@ -104,7 +104,7 @@ def hits_water(pos, holes, radius, hole_radius, clearance=0.05):
         return False
     for hole in holes:
         dx = pos[0] - hole[0]
-        dz = pos[2] - hole[2]
+        dz = pos[2] - hole[1]
         if dx * dx + dz * dz < (radius + hole_radius) ** 2:
             return True
     return False

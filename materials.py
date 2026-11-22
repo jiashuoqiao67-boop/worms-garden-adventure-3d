@@ -24,6 +24,7 @@ class Material:
     base_color: tuple = (128, 128, 128)
     texture: np.ndarray = None      # HxWx3 RGB uint8, or None
     uvs: np.ndarray = None           # per-vertex UV, shape (N, 2), or None
+    filter_mode: str = "nearest"    # "nearest" (Part A) or "bilinear" (Part B)
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,38 @@ def sample_nearest(tex, u, v):
     tx = min(int(u * w), w - 1)
     ty = min(int(v * h), h - 1)
     return tex[ty, tx]
+
+
+def sample_bilinear(tex, u, v):
+    """Bilinear texel interpolation with wrap (Part B extension 2).
+
+    Four neighbouring texels are blended by the fractional parts of the
+    texture coordinates, so magnified textures soften instead of showing
+    hard nearest-neighbour blocks. Works on scalar ``u``, ``v``.
+    """
+    h, w, _ = tex.shape
+    u = u % 1.0
+    v = v % 1.0
+    x = u * w - 0.5
+    y = v * h - 0.5
+    x0 = int(np.floor(x))
+    y0 = int(np.floor(y))
+    fx = x - x0
+    fy = y - y0
+
+    x0m = x0 % w
+    x1m = (x0 + 1) % w
+    y0m = y0 % h
+    y1m = (y0 + 1) % h
+
+    c00 = tex[y0m, x0m].astype(float)
+    c10 = tex[y0m, x1m].astype(float)
+    c01 = tex[y1m, x0m].astype(float)
+    c11 = tex[y1m, x1m].astype(float)
+
+    top = c00 * (1.0 - fx) + c10 * fx
+    bottom = c01 * (1.0 - fx) + c11 * fx
+    return top * (1.0 - fy) + bottom * fy
 
 
 # ---------------------------------------------------------------------------
