@@ -219,7 +219,9 @@ def main():
         "following corridor neighbours and remembering their last few cells so "
         "they patrol a wider route instead of oscillating in a small area, "
         "a 3D spark trail emitted while moving, "
-        "and a coloured firework burst on mouse click. Every particle stores a "
+        "and a coloured firework burst on mouse click. The worm and bird "
+        "models yaw about the vertical axis to face their current travel "
+        "direction. Every particle stores a "
         "3D position and velocity in world space, with gravity, damping and a "
         "bounded lifetime and count.")
 

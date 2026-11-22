@@ -93,6 +93,7 @@ def build_level(level, seed=None, cols=COLS, rows=ROWS,
             "target": target,
             "previous": cell,
             "recent": [cell],
+            "yaw": 0.0,
             "pos": cell_center_3d(cell[0], cell[1], BIRD_HEIGHT),
             "speed": BIRD_SPEED + rng.uniform(-0.2, 0.4),
         })
@@ -145,6 +146,7 @@ def update_birds(state, dt):
             if choices:
                 bird["target"] = random.choice(choices)
         else:
+            bird["yaw"] = math.atan2(direction[0], direction[2])
             bird["pos"] += direction / distance * bird["speed"] * dt
 
 

@@ -13,6 +13,7 @@ Run from the project root:
 """
 
 import os
+import math
 import sys
 
 import numpy as np
@@ -62,7 +63,8 @@ def materials(filter_mode="nearest"):
     }
 
 
-def render_frame(state, worm_pos, view_mode, projection, fog, filter_mode, t):
+def render_frame(state, worm_pos, view_mode, projection, fog, filter_mode,
+                 t, worm_yaw=0.0):
     mats = materials(filter_mode)
     renderer = Renderer(W, H, fog=FOG_CONFIG if fog else None)
     cam = make_camera(view_mode, worm_pos, projection, W, H)
@@ -86,16 +88,21 @@ def render_frame(state, worm_pos, view_mode, projection, fog, filter_mode, t):
             continue
         fruit = mats["gold"] if apple["value"] == 100 else mats["red"]
         role_mat = {"fruit": fruit, "stem": mats["stem"], "leaf": mats["leaf"]}
-        for mesh, role in apple_parts(apple_world_pos(apple, t)):
-            renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
+        apple_model = model_matrix((1.0, 1.0, 1.0), 0.0,
+                                   apple_world_pos(apple, t))
+        for mesh, role in apple_parts():
+            renderer.draw_mesh(cam, mesh, apple_model, role_mat[role])
     bird_role_mat = {"bird": mats["bird"], "belly": mats["belly"],
                      "beak": mats["beak"], "eye": mats["eye"]}
     for bird in state["birds"]:
-        for mesh, role in bird_parts(bird["pos"]):
-            renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
+        bird_model = model_matrix((1.0, 1.0, 1.0), bird.get("yaw", 0.0),
+                                  bird["pos"])
+        for mesh, role in bird_parts():
+            renderer.draw_mesh(cam, mesh, bird_model, bird_role_mat[role])
     worm_role_mat = {"worm": mats["worm"], "eye": mats["eye"]}
-    for mesh, role in worm_parts(worm_pos):
-        renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
+    worm_model = model_matrix((1.0, 1.0, 1.0), worm_yaw, worm_pos)
+    for mesh, role in worm_parts():
+        renderer.draw_mesh(cam, mesh, worm_model, worm_role_mat[role])
     return renderer.surface()
 
 
@@ -154,6 +161,9 @@ def main():
         for f in range(n):
             k = f / max(1, n - 1)
             worm = lerp(wfrom, wto, k)
+            wd = wto - wfrom
+            worm_yaw = (math.atan2(wd[0], wd[2])
+                        if np.linalg.norm(wd) > 1e-6 else 0.0)
             # Jump parabola on the dedicated jump segment.
             if caption.startswith("Vertical jump"):
                 worm = worm.copy()
@@ -163,7 +173,7 @@ def main():
             update_particles(particles, 1.0 / FPS)
 
             surface = render_frame(state, worm, view, proj, fog, filt,
-                                   t=frame_index * 0.1)
+                                   t=frame_index * 0.1, worm_yaw=worm_yaw)
             frame = add_caption(surface, caption)
             frames.append(frame)
             frame_index += 1

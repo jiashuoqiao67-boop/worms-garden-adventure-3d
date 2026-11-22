@@ -69,21 +69,26 @@ def render_once(state, wall_meshes, ground, cam, mats, t, static=None):
             continue
         fruit_mat = gold_mat if apple["value"] == 100 else red_mat
         role_mat = {"fruit": fruit_mat, "stem": stem_mat, "leaf": leaf_mat}
-        for mesh, role in apple_parts(apple_world_pos(apple, t)):
+        apple_model = model_matrix((1.0, 1.0, 1.0), 0.0,
+                                   apple_world_pos(apple, t))
+        for mesh, role in apple_parts():
             tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
+            renderer.draw_mesh(cam, mesh, apple_model, role_mat[role])
 
     bird_role_mat = {"bird": bird_mat, "belly": belly_mat,
                      "beak": beak_mat, "eye": eye_mat}
     for bird in state["birds"]:
-        for mesh, role in bird_parts(bird["pos"]):
+        bird_model = model_matrix((1.0, 1.0, 1.0), bird.get("yaw", 0.0),
+                                  bird["pos"])
+        for mesh, role in bird_parts():
             tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
+            renderer.draw_mesh(cam, mesh, bird_model, bird_role_mat[role])
 
     worm_role_mat = {"worm": worm_mat, "eye": eye_mat}
-    for mesh, role in worm_parts(state["position"]):
+    worm_model = model_matrix((1.0, 1.0, 1.0), 0.0, state["position"])
+    for mesh, role in worm_parts():
         tri_total += len(mesh.triangles)
-        renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
+        renderer.draw_mesh(cam, mesh, worm_model, worm_role_mat[role])
 
     return tri_total
 

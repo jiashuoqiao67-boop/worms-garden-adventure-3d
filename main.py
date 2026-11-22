@@ -8,6 +8,7 @@ Run:
     .venv/Scripts/python.exe main.py
 """
 
+import math
 import time
 
 import pygame
@@ -126,6 +127,7 @@ def main():
 
     view_mode = 0
     projection = "perspective"
+    worm_yaw = 0.0
     quality = 1
     fog_enabled = False
     bilinear = False
@@ -195,6 +197,7 @@ def main():
 
         # ---------------- Update world ----------------
         if np.linalg.norm(direction) > 0:
+            worm_yaw = math.atan2(direction[0], direction[2])
             move_xz(state["position"], direction, WORM_SPEED, dt,
                     state["wall_boxes"], WORM_RADIUS)
             spark_timer += dt
@@ -266,23 +269,29 @@ def main():
                 continue
             fruit_mat = gold_mat if apple["value"] == 100 else red_mat
             role_mat = {"fruit": fruit_mat, "stem": stem_mat, "leaf": leaf_mat}
-            for mesh, role in apple_parts(apple_world_pos(apple, t)):
+            apple_model = model_matrix((1.0, 1.0, 1.0), 0.0,
+                                       apple_world_pos(apple, t))
+            for mesh, role in apple_parts():
                 tri_total += len(mesh.triangles)
-                renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
+                renderer.draw_mesh(cam, mesh, apple_model, role_mat[role])
 
         # Birds
         bird_role_mat = {"bird": bird_mat, "belly": belly_mat,
                          "beak": beak_mat, "eye": eye_mat}
         for bird in state["birds"]:
-            for mesh, role in bird_parts(bird["pos"]):
+            bird_model = model_matrix((1.0, 1.0, 1.0), bird["yaw"],
+                                       bird["pos"])
+            for mesh, role in bird_parts():
                 tri_total += len(mesh.triangles)
-                renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
+                renderer.draw_mesh(cam, mesh, bird_model, bird_role_mat[role])
 
         # Worm
         worm_role_mat = {"worm": worm_mat, "eye": eye_mat}
-        for mesh, role in worm_parts(state["position"]):
+        worm_model = model_matrix((1.0, 1.0, 1.0), worm_yaw,
+                                  state["position"])
+        for mesh, role in worm_parts():
             tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
+            renderer.draw_mesh(cam, mesh, worm_model, worm_role_mat[role])
 
         # Project particles; draw them after the framebuffer is blitted.
         particle_dots = []

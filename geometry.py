@@ -195,23 +195,31 @@ def _sph(center, scale, radius=1.0, rings=7, sectors=10) -> Mesh:
                        scale=scale)
 
 
+def _place(mesh, center):
+    """Translate a local-origin mesh to a world centre (compat wrapper)."""
+    mesh.vertices = mesh.vertices + np.asarray(center, dtype=float)
+    return mesh
+
+
 def worm_parts(center=(0.0, 0.0, 0.0)):
     """Caterpillar: tapered segment chain + round head, split into a body
-    part and an eye part. Returns [(mesh, role), ...] (head faces +Z)."""
-    cx, cy, cz = center
+    part and an eye part. Vertices are local to the origin (head faces +Z);
+    the renderer positions/rotates them with a model matrix.
+    The `center` argument is kept for signature compatibility and is not
+    baked into the local vertices."""
     body = []
     seg_z = [-0.21, -0.12, -0.03, 0.06]
     for i, z in enumerate(seg_z):
         r = 0.105 + 0.02 * (i / 3.0)
-        body.append(_sph((cx, cy, cz + z), (r, r, 0.075),
+        body.append(_sph((0.0, 0.0, z), (r, r, 0.075),
                          rings=5, sectors=8))
-    body.append(_sph((cx, cy + 0.01, cz + 0.21),
+    body.append(_sph((0.0, 0.01, 0.21),
                       (0.14, 0.135, 0.125), rings=6, sectors=10))
     # Eyes sit proud of the front/top of the head, not buried inside it.
     eyes = [
-        _sph((cx - 0.06, cy + 0.075, cz + 0.305),
+        _sph((-0.06, 0.075, 0.305),
              (0.026, 0.026, 0.026), rings=4, sectors=6),
-        _sph((cx + 0.06, cy + 0.075, cz + 0.305),
+        _sph((0.06, 0.075, 0.305),
              (0.026, 0.026, 0.026), rings=4, sectors=6),
     ]
     return [(_merge_meshes(body), "worm"),
@@ -219,15 +227,17 @@ def worm_parts(center=(0.0, 0.0, 0.0)):
 
 
 def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    return _merge_meshes([m for m, _ in worm_parts(center)])
+    parts = worm_parts()
+    for m, _ in parts:
+        _place(m, center)
+    return _merge_meshes([m for m, _ in parts])
 
 
 def apple_parts(center=(0.0, 0.0, 0.0)):
-    """Apple: flattened fruit, short stem and one leaf."""
-    cx, cy, cz = center
-    fruit = [_sph((cx, cy, cz), (0.15, 0.135, 0.15), rings=6, sectors=10)]
-    stem = [cube_mesh((0.024, 0.10, 0.024), (cx, cy + 0.17, cz))]
-    leaf = [_sph((cx + 0.06, cy + 0.19, cz),
+    """Apple: flattened fruit, short stem and one leaf (local origin)."""
+    fruit = [_sph((0.0, 0.0, 0.0), (0.15, 0.135, 0.15), rings=6, sectors=10)]
+    stem = [cube_mesh((0.024, 0.10, 0.024), (0.0, 0.17, 0.0))]
+    leaf = [_sph((0.06, 0.19, 0.0),
                  (0.06, 0.014, 0.032), rings=4, sectors=6)]
     return [(_merge_meshes(fruit), "fruit"),
             (_merge_meshes(stem), "stem"),
@@ -235,31 +245,34 @@ def apple_parts(center=(0.0, 0.0, 0.0)):
 
 
 def apple_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    return _merge_meshes([m for m, _ in apple_parts(center)])
+    parts = apple_parts()
+    for m, _ in parts:
+        _place(m, center)
+    return _merge_meshes([m for m, _ in parts])
 
 
 def bird_parts(center=(0.0, 0.0, 0.0)):
-    """Bird: body, head, folded wings and tail, plus a beak and eyes."""
-    cx, cy, cz = center
+    """Bird: body, head, folded wings and tail, plus a beak and eyes
+    (local origin, head/beak face +Z)."""
     body = [
-        _sph((cx, cy, cz), (0.15, 0.11, 0.19), rings=5, sectors=8),
-        _sph((cx, cy + 0.05, cz + 0.17),
+        _sph((0.0, 0.0, 0.0), (0.15, 0.11, 0.19), rings=5, sectors=8),
+        _sph((0.0, 0.05, 0.17),
              (0.09, 0.085, 0.09), rings=5, sectors=8),
-        _sph((cx - 0.14, cy + 0.02, cz - 0.04),
+        _sph((-0.14, 0.02, -0.04),
              (0.11, 0.016, 0.10), rings=4, sectors=6),
-        _sph((cx + 0.14, cy + 0.02, cz - 0.04),
+        _sph((0.14, 0.02, -0.04),
              (0.11, 0.016, 0.10), rings=4, sectors=6),
-        _sph((cx, cy + 0.02, cz - 0.21),
+        _sph((0.0, 0.02, -0.21),
              (0.05, 0.02, 0.085), rings=4, sectors=6),
     ]
-    belly = [_sph((cx, cy - 0.02, cz + 0.05),
+    belly = [_sph((0.0, -0.02, 0.05),
                   (0.11, 0.08, 0.13), rings=4, sectors=6)]
     beak = [cube_mesh((0.03, 0.028, 0.08),
-                      (cx, cy + 0.03, cz + 0.30))]
+                      (0.0, 0.03, 0.30))]
     eyes = [
-        _sph((cx - 0.085, cy + 0.06, cz + 0.18),
+        _sph((-0.085, 0.06, 0.18),
              (0.02, 0.02, 0.02), rings=4, sectors=6),
-        _sph((cx + 0.085, cy + 0.06, cz + 0.18),
+        _sph((0.085, 0.06, 0.18),
              (0.02, 0.02, 0.02), rings=4, sectors=6),
     ]
     return [(_merge_meshes(body), "bird"),
@@ -269,7 +282,10 @@ def bird_parts(center=(0.0, 0.0, 0.0)):
 
 
 def bird_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    return _merge_meshes([m for m, _ in bird_parts(center)])
+    parts = bird_parts()
+    for m, _ in parts:
+        _place(m, center)
+    return _merge_meshes([m for m, _ in parts])
 
 
 def flag_mesh(base=(0.0, 0.0, 0.0), height=0.8) -> Mesh:

@@ -98,18 +98,23 @@ def render_state(state, view_mode=0, projection="perspective",
             continue
         fruit = mats["gold"] if apple["value"] == 100 else mats["red"]
         role_mat = {"fruit": fruit, "stem": mats["stem"], "leaf": mats["leaf"]}
-        for mesh, role in apple_parts(apple_world_pos(apple, t)):
-            renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
+        apple_model = model_matrix((1.0, 1.0, 1.0), 0.0,
+                                   apple_world_pos(apple, t))
+        for mesh, role in apple_parts():
+            renderer.draw_mesh(cam, mesh, apple_model, role_mat[role])
 
     bird_role_mat = {"bird": mats["bird"], "belly": mats["belly"],
                      "beak": mats["beak"], "eye": mats["eye"]}
     for bird in state["birds"]:
-        for mesh, role in bird_parts(bird["pos"]):
-            renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
+        bird_model = model_matrix((1.0, 1.0, 1.0), bird.get("yaw", 0.0),
+                                  bird["pos"])
+        for mesh, role in bird_parts():
+            renderer.draw_mesh(cam, mesh, bird_model, bird_role_mat[role])
 
     worm_role_mat = {"worm": mats["worm"], "eye": mats["eye"]}
-    for mesh, role in worm_parts(state["position"]):
-        renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
+    worm_model = model_matrix((1.0, 1.0, 1.0), 0.0, state["position"])
+    for mesh, role in worm_parts():
+        renderer.draw_mesh(cam, mesh, worm_model, worm_role_mat[role])
     return renderer
 
 
