@@ -51,16 +51,17 @@ def test_ground_normal_points_up():
 
 
 def test_wall_box_dimensions():
+    span = 1.0 + WALL_THICKNESS
     n_center, n_size = wall_box(2, 1, "N")
     assert np.allclose(n_center, [2.5, WALL_HEIGHT / 2, 1.0])
-    assert np.allclose(n_size, [1.0, WALL_HEIGHT, WALL_THICKNESS])
+    assert np.allclose(n_size, [span, WALL_HEIGHT, WALL_THICKNESS])
 
     s_center, s_size = wall_box(2, 1, "S")
     assert np.allclose(s_center, [2.5, WALL_HEIGHT / 2, 2.0])
 
     e_center, e_size = wall_box(2, 1, "E")
     assert np.allclose(e_center, [3.0, WALL_HEIGHT / 2, 1.5])
-    assert np.allclose(e_size, [WALL_THICKNESS, WALL_HEIGHT, 1.0])
+    assert np.allclose(e_size, [WALL_THICKNESS, WALL_HEIGHT, span])
 
     w_center, w_size = wall_box(2, 1, "W")
     assert np.allclose(w_center, [2.0, WALL_HEIGHT / 2, 1.5])

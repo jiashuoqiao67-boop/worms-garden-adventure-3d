@@ -62,9 +62,14 @@ def make_camera(view_mode, worm_pos, projection, width, height):
     if view_mode == 1:      # side
         eye = np.array([COLS + 6.0, 4.0, ROWS / 2.0])
         target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
-    elif view_mode == 2:    # follow
-        eye = worm_pos + np.array([0.0, 3.5, 6.0])
+    elif view_mode == 2:    # follow: directly overhead, bird's-eye view
+        eye = worm_pos + np.array([0.0, 7.5, 0.0])
         target = worm_pos.copy()
+        # Up vector chosen so the camera right matches the overview view
+        # (screen right = world -X); avoids degeneracy when looking straight
+        # down and keeps the A/D mapping consistent.
+        return Camera(eye=eye, target=target, projection=projection,
+                      width=width, height=height, up=(0.0, 0.0, -1.0))
     else:                   # elevated overview
         eye = np.array([COLS / 2.0, 13.0, ROWS + 6.0])
         target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])

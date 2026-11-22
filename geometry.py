@@ -98,18 +98,21 @@ def wall_box(col, row, direction):
     h = WALL_HEIGHT / 2.0
     t = WALL_THICKNESS
 
+    # Walls extend half a thickness past each cell edge, matching the 2D
+    # reference rectangles (CELL + thickness), so corner seams stay sealed.
+    span = 1.0 + t
     if direction == "N":
         center = (col + 0.5, h, row)
-        size = (1.0, WALL_HEIGHT, t)
+        size = (span, WALL_HEIGHT, t)
     elif direction == "S":
         center = (col + 0.5, h, row + 1)
-        size = (1.0, WALL_HEIGHT, t)
+        size = (span, WALL_HEIGHT, t)
     elif direction == "E":
         center = (col + 1, h, row + 0.5)
-        size = (t, WALL_HEIGHT, 1.0)
+        size = (t, WALL_HEIGHT, span)
     elif direction == "W":
         center = (col, h, row + 0.5)
-        size = (t, WALL_HEIGHT, 1.0)
+        size = (t, WALL_HEIGHT, span)
     else:
         raise ValueError(f"Unknown wall direction: {direction}")
 

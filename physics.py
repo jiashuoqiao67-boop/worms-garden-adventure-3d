@@ -6,11 +6,12 @@ Horizontal navigation stays on the X/Z ground plane; Y carries the vertical
 jump. Wall colliders use the same footprint as the 3D wall meshes.
 """
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
 
-from maze import WORM_RADIUS, BIRD_RADIUS
+from maze import WORM_RADIUS, BIRD_RADIUS, WALL_THICKNESS_WORLD
 
 GRAVITY = 10.0          # world units / s^2
 JUMP_SPEED = 3.2        # world units / s (handbook 11.3)
@@ -43,22 +44,34 @@ def hits_any_wall(pos, boxes, radius):
 
 
 def move_xz(pos, direction, speed, dt, boxes, radius):
-    """Move one axis at a time, sliding along walls without penetration."""
+    """Move one axis at a time, sliding along walls without penetration.
+
+    The whole frame step is subdivided into small sub-steps (as in the
+    supplied 2D reference) so a large low-frame-rate step cannot skip past a
+    wall face; each sub-step slides independently along the wall, which keeps
+    corners passable instead of locking both axes.
+    """
     d = np.asarray(direction, dtype=float)
     length = np.linalg.norm(d)
     if length > _EPS:
         d /= length
-    step = d * speed * dt
+    movement = d * speed * dt
 
-    new = pos.copy()
-    new[0] += step[0]
-    if not hits_any_wall(new, boxes, radius):
-        pos[0] = new[0]
+    max_step = max(1e-3, WALL_THICKNESS_WORLD / 2.0)
+    steps = max(1, math.ceil(max(abs(movement[0]), abs(movement[2])) / max_step))
+    step_x = movement[0] / steps
+    step_z = movement[2] / steps
 
-    new = pos.copy()
-    new[2] += step[2]
-    if not hits_any_wall(new, boxes, radius):
-        pos[2] = new[2]
+    for _ in range(steps):
+        new = pos.copy()
+        new[0] += step_x
+        if not hits_any_wall(new, boxes, radius):
+            pos[0] = new[0]
+
+        new = pos.copy()
+        new[2] += step_z
+        if not hits_any_wall(new, boxes, radius):
+            pos[2] = new[2]
 
 
 # ---------------------------------------------------------------------------

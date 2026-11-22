@@ -44,9 +44,10 @@ def test_box_dimensions_are_valid():
     maze = generate_maze(cols=3, rows=3, start_cell=(0, 1),
                           finish_cell=(2, 1), seed=1)
     for center, size in maze_wall_boxes(maze, 3, 3):
+        span = 1.0 + WALL_THICKNESS
         assert size[1] == WALL_HEIGHT
-        assert size[0] in (1.0, WALL_THICKNESS)
-        assert size[2] in (1.0, WALL_THICKNESS)
+        assert size[0] in (span, WALL_THICKNESS)
+        assert size[2] in (span, WALL_THICKNESS)
         assert np.isclose(center[1], WALL_HEIGHT / 2.0)
 
 
