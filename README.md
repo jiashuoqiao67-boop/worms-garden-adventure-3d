@@ -6,15 +6,23 @@ Python, NumPy, Pillow and Pygame (pure software renderer; no game engine).
 
 ## Environment (record the exact versions you tested on)
 
-- Python: 3.13.18
-- NumPy: 2.5.4
+- Python: 3.12.0 (project virtual environment `.venv`)
+- NumPy: 2.5.5
 - Pillow: 13.0.0
 - Pygame: 2.6.1
 
 ## Install
 
+Create and activate a virtual environment, then install the pinned dependencies:
+
 ```bash
-python -m pip install numpy pillow pygame
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS / Linux:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
 ## Run
@@ -22,6 +30,8 @@ python -m pip install numpy pillow pygame
 ```bash
 python main.py
 ```
+
+The original supplied 2D reference (kept for comparison) is in `reference/Start2Dto3D.py`.
 
 ## Controls
 

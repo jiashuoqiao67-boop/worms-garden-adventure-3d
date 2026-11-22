@@ -11,4 +11,7 @@ venv/
 .DS_Store
 Thumbs.db
 
+# 本机环境修复备份（注册表），不属于课程代码
+reference/registry_font_backup.json
+
 # 注：screenshots/ 与 tests/ 按手册 17.1 要求需要提交，不要忽略
