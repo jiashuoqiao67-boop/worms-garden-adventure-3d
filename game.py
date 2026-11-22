@@ -95,7 +95,7 @@ def build_level(level, seed=None, cols=COLS, rows=ROWS,
             "recent": [cell],
             "yaw": 0.0,
             "pos": cell_center_3d(cell[0], cell[1], BIRD_HEIGHT),
-            "speed": BIRD_SPEED + rng.uniform(-0.2, 0.4),
+            "speed": BIRD_SPEED + rng.uniform(0.1, 0.5),
         })
 
     return {
@@ -129,6 +129,20 @@ def update_birds(state, dt):
         direction = target_pos - bird["pos"]
         distance = np.linalg.norm(direction)
 
+        neighbours = get_available_neighbors(
+            state["maze"], bird["cell"], cols, rows)
+
+        # Guard: if the current target is missing/invalid (or the bird is
+        # sitting on its own cell with nowhere to go), re-pick a reachable
+        # neighbour so the bird never freezes in place.
+        if neighbours and bird["target"] not in neighbours \
+                and bird["target"] != bird["cell"]:
+            bird["target"] = random.choice(neighbours)
+            target_pos = cell_center_3d(bird["target"][0], bird["target"][1],
+                                         BIRD_HEIGHT)
+            direction = target_pos - bird["pos"]
+            distance = np.linalg.norm(direction)
+
         if distance <= 0.05:
             bird["pos"] = target_pos.copy()
             bird["previous"] = bird["cell"]
@@ -136,8 +150,6 @@ def update_birds(state, dt):
             recent = bird.setdefault("recent", [bird["cell"]])
             recent.append(bird["cell"])
             del recent[:-BIRD_MEMORY]
-            neighbours = get_available_neighbors(
-                state["maze"], bird["cell"], cols, rows)
             # Prefer a neighbour not visited recently, then one that is not
             # the cell just left; fall back to any neighbour in a dead end.
             fresh = [n for n in neighbours if n not in recent]
