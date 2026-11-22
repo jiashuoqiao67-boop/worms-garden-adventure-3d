@@ -108,3 +108,25 @@ def wall_box(col, row, direction):
         raise ValueError(f"Unknown wall direction: {direction}")
 
     return np.array(center, dtype=float), np.array(size, dtype=float)
+
+
+def maze_wall_boxes(maze, cols, rows):
+    """Convert maze wall flags into 3D wall boxes (handbook Appendix F1).
+
+    Duplicate walls are avoided exactly as in the 2D draw strategy: emit N/W
+    walls for every cell; emit E walls only on the last column and S walls
+    only on the last row. Entrance/exit openings keep their cleared flags.
+    """
+    boxes = []
+    for row in range(rows):
+        for col in range(cols):
+            walls = maze[row][col]["walls"]
+            if walls["N"]:
+                boxes.append(wall_box(col, row, "N"))
+            if walls["W"]:
+                boxes.append(wall_box(col, row, "W"))
+            if col == cols - 1 and walls["E"]:
+                boxes.append(wall_box(col, row, "E"))
+            if row == rows - 1 and walls["S"]:
+                boxes.append(wall_box(col, row, "S"))
+    return boxes
