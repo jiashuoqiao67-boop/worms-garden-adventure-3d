@@ -134,7 +134,7 @@ def main():
                     view_mode = 1
                 elif event.key == pygame.K_3:
                     view_mode = 2
-                elif event.key == pygame.K_f5:
+                elif event.key == pygame.K_F5:
                     quality = quality % 4 + 1
                 elif event.key == pygame.K_r:
                     state = restart_run(state)
