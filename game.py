@@ -150,6 +150,10 @@ def update_birds(state, dt):
             recent = bird.setdefault("recent", [bird["cell"]])
             recent.append(bird["cell"])
             del recent[:-BIRD_MEMORY]
+            # Recompute neighbours for the cell just reached, so the next
+            # target is always a valid corridor cell from the current one.
+            neighbours = get_available_neighbors(
+                state["maze"], bird["cell"], cols, rows)
             # Prefer a neighbour not visited recently, then one that is not
             # the cell just left; fall back to any neighbour in a dead end.
             fresh = [n for n in neighbours if n not in recent]
@@ -157,6 +161,8 @@ def update_birds(state, dt):
             choices = fresh or alternatives or neighbours
             if choices:
                 bird["target"] = random.choice(choices)
+            else:
+                bird["target"] = bird["cell"]
         else:
             bird["yaw"] = math.atan2(direction[0], direction[2])
             bird["pos"] += direction / distance * bird["speed"] * dt
