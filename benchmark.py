@@ -102,7 +102,7 @@ def main():
 
     mats = (
         Material(base_color=(54, 118, 70), texture=make_grass_texture(128)),
-        Material(base_color=(150, 144, 134), texture=make_stone_texture(128)),
+        Material(base_color=(172, 166, 154), texture=make_stone_texture(128)),
         Material(base_color=(24, 134, 192)),
         Material(base_color=(46, 226, 122)),
         Material(base_color=(212, 40, 52)),

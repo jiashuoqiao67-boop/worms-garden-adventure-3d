@@ -43,13 +43,30 @@ def barycentric(p, a, b, c):
 
 
 class Renderer:
-    def __init__(self, width, height, fog=None, background=(0, 0, 0)):
+    def __init__(self, width, height, fog=None, background=(0, 0, 0),
+                 sky_grad=None):
         self.width = width
         self.height = height
         self.background = np.asarray(background, dtype=np.uint8)
         self.colorbuf = np.zeros((height, width, 3), dtype=np.uint8)
-        self.colorbuf[:] = self.background
         self.depthbuf = np.full((height, width), np.inf)
+        # Optional vertical three-stop sky gradient: (top, mid, low) RGB.
+        # Baked once into a background buffer; it only fills pixels where no
+        # geometry is drawn, so it does not affect the Z-buffer pipeline.
+        self._sky = None
+        if sky_grad is not None:
+            top, mid, low = (np.asarray(c, dtype=float) for c in sky_grad)
+            rows = np.zeros((height, 3), dtype=float)
+            for y in range(height):
+                t = y / max(1, height - 1)
+                if t < 0.55:
+                    k = t / 0.55
+                    rows[y] = top + (mid - top) * k
+                else:
+                    k = (t - 0.55) / 0.45
+                    rows[y] = mid + (low - mid) * k
+            self._sky = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
+            self.colorbuf[:] = self._sky
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
         self.fog = fog
@@ -67,7 +84,10 @@ class Renderer:
         self._last_is_identity = False
 
     def clear(self):
-        self.colorbuf[:] = self.background
+        if self._sky is not None:
+            self.colorbuf[:] = self._sky
+        else:
+            self.colorbuf[:] = self.background
         self.depthbuf.fill(np.inf)
 
     def _project(self, camera, cam_point):

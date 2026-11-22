@@ -3,40 +3,40 @@
     "preset": "FAST",
     "resolution": "819x512",
     "triangles": 7092,
-    "render_ms_mean": 131.43,
-    "render_ms_median": 132.25,
-    "render_ms_min": 120.45,
-    "render_ms_max": 145.15,
-    "frames_per_s": 7.6
+    "render_ms_mean": 143.78,
+    "render_ms_median": 151.43,
+    "render_ms_min": 130.03,
+    "render_ms_max": 153.63,
+    "frames_per_s": 6.6
   },
   {
     "preset": "BALANCED",
     "resolution": "1024x640",
     "triangles": 7092,
-    "render_ms_mean": 151.89,
-    "render_ms_median": 146.98,
-    "render_ms_min": 131.22,
-    "render_ms_max": 177.85,
-    "frames_per_s": 6.8
+    "render_ms_mean": 135.11,
+    "render_ms_median": 135.64,
+    "render_ms_min": 129.82,
+    "render_ms_max": 139.81,
+    "frames_per_s": 7.4
   },
   {
     "preset": "HIGH",
     "resolution": "1280x800",
     "triangles": 7092,
-    "render_ms_mean": 146.47,
-    "render_ms_median": 146.08,
-    "render_ms_min": 133.67,
-    "render_ms_max": 164.04,
-    "frames_per_s": 6.8
+    "render_ms_mean": 159.83,
+    "render_ms_median": 158.92,
+    "render_ms_min": 141.55,
+    "render_ms_max": 180.36,
+    "frames_per_s": 6.3
   },
   {
     "preset": "NATIVE",
     "resolution": "1280x800",
     "triangles": 7092,
-    "render_ms_mean": 144.28,
-    "render_ms_median": 141.94,
-    "render_ms_min": 138.66,
-    "render_ms_max": 159.18,
-    "frames_per_s": 7.0
+    "render_ms_mean": 168.5,
+    "render_ms_median": 174.56,
+    "render_ms_min": 148.62,
+    "render_ms_max": 178.27,
+    "frames_per_s": 5.7
   }
 ]

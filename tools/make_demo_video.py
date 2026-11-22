@@ -32,7 +32,7 @@ from materials import Material, make_grass_texture, make_stone_texture
 from renderer import Renderer
 from transforms import model_matrix
 from particles import spawn_firework, update_particles
-from main import make_camera, build_wall_meshes, IDENTITY, FOG_CONFIG, SKY_BG
+from main import make_camera, build_wall_meshes, IDENTITY, FOG_CONFIG, SKY_BG, SKY_GRAD
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "report", "demo_video.mp4")
@@ -47,7 +47,7 @@ def materials(filter_mode="nearest"):
     return {
         "grass": Material(base_color=(54, 118, 70),
                           texture=make_grass_texture(128), filter_mode=filter_mode),
-        "stone": Material(base_color=(150, 144, 134),
+        "stone": Material(base_color=(172, 166, 154),
                           texture=make_stone_texture(128), filter_mode=filter_mode),
         "walltop": Material(base_color=(92, 152, 80)),
         "water": Material(base_color=(24, 134, 192)),
@@ -67,7 +67,8 @@ def materials(filter_mode="nearest"):
 def render_frame(state, worm_pos, view_mode, projection, fog, filter_mode,
                  t, worm_yaw=0.0):
     mats = materials(filter_mode)
-    renderer = Renderer(W, H, fog=FOG_CONFIG if fog else None, background=SKY_BG)
+    renderer = Renderer(W, H, fog=FOG_CONFIG if fog else None, background=SKY_BG,
+                        sky_grad=SKY_GRAD)
     cam = make_camera(view_mode, worm_pos, projection, W, H)
     wall_meshes = build_wall_meshes(state)
     ground = ground_mesh(COLS, ROWS)

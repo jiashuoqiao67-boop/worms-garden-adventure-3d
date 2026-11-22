@@ -46,11 +46,11 @@ def make_grass_texture(size=128, seed=12):
 
 def make_stone_texture(size=128, seed=7):
     rng = random.Random(seed)
-    img = Image.new("RGB", (size, size), (112, 116, 119))
+    img = Image.new("RGB", (size, size), (146, 140, 130))
     draw = ImageDraw.Draw(img)
     for _ in range(500):
         x, y = rng.randrange(size), rng.randrange(size)
-        tone = rng.choice([(55, 59, 62), (112, 116, 119), (175, 178, 178)])
+        tone = rng.choice([(96, 92, 86), (146, 140, 130), (172, 166, 154)])
         draw.rectangle((x, y, x + rng.randrange(2, 6), y + rng.randrange(2, 6)),
                        fill=tone)
     return np.array(img.convert("RGB"), dtype=np.uint8)

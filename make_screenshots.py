@@ -31,7 +31,7 @@ from renderer import Renderer
 from transforms import model_matrix
 from main import (
     make_camera, build_wall_meshes, fit_buffer, IDENTITY, FOG_CONFIG,
-    SKY_BG, WINDOW_W, WINDOW_H,
+    SKY_BG, SKY_GRAD, WINDOW_W, WINDOW_H,
 )
 
 SCREENSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -52,7 +52,7 @@ def _materials(filter_mode="nearest"):
         "grass": Material(base_color=(54, 118, 70),
                           texture=make_grass_texture(128),
                           filter_mode=filter_mode),
-        "stone": Material(base_color=(150, 144, 134),
+        "stone": Material(base_color=(172, 166, 154),
                           texture=make_stone_texture(128),
                           filter_mode=filter_mode),
         "walltop": Material(base_color=(92, 152, 80)),
@@ -74,7 +74,8 @@ def render_state(state, view_mode=0, projection="perspective",
                  width=1280, height=800, fog=None, filter_mode="bilinear",
                  t=1.0):
     mats = _materials(filter_mode)
-    renderer = Renderer(width, height, fog=fog, background=SKY_BG)
+    renderer = Renderer(width, height, fog=fog, background=SKY_BG,
+                        sky_grad=SKY_GRAD)
     cam = make_camera(view_mode, state["position"], projection, width, height)
     wall_meshes = build_wall_meshes(state)
     ground = ground_mesh(COLS, ROWS)

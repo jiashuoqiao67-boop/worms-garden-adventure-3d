@@ -50,9 +50,14 @@ QUALITY_PRESETS = {
 IDENTITY = model_matrix((1, 1, 1), 0.0, (0.0, 0.0, 0.0))
 
 # Part B extension 1: atmospheric depth fog configuration.
-FOG_CONFIG = {"color": np.array([176, 196, 214]), "near": 8.0, "far": 26.0}
-# Clear-sky backdrop behind the maze where no geometry is drawn.
-SKY_BG = (184, 214, 228)
+FOG_CONFIG = {"color": np.array([182, 212, 226]), "near": 8.0, "far": 26.0}
+# Three-stop clear-sky backdrop (top -> mid -> low), matching the reference
+# garden look. SKY_BG keeps the low stop as the plain-colour fallback.
+SKY_TOP = (26, 62, 112)
+SKY_MID = (92, 160, 212)
+SKY_LOW = (184, 214, 228)
+SKY_BG = SKY_LOW
+SKY_GRAD = (SKY_TOP, SKY_MID, SKY_LOW)
 
 
 def fit_buffer(window_w, window_h, target_h):
@@ -165,7 +170,7 @@ def main(max_frames=None):
     # wall tops over warm weathered stone, bright green worm, dark violet bird).
     grass_mat = Material(base_color=(54, 118, 70),
                          texture=make_grass_texture(128))
-    stone_mat = Material(base_color=(150, 144, 134),
+    stone_mat = Material(base_color=(172, 166, 154),
                          texture=make_stone_texture(128))
     walltop_mat = Material(base_color=(92, 152, 80))
     worm_mat = Material(base_color=(86, 206, 118))
@@ -198,6 +203,9 @@ def main(max_frames=None):
     render_ms = 0.0
     triangle_count = 0
     renderer = None
+    # Smoothed chase-camera pose (eye, target); None until the follow view
+    # first activates. Exponential damping gives the reference's soft follow.
+    cam_smooth = None
 
     running = True
     frames = 0
@@ -304,14 +312,33 @@ def main(max_frames=None):
         buf_w, buf_h = fit_buffer(window_w, window_h, target_h)
         fog_cfg = FOG_CONFIG if fog_enabled else None
         if renderer is None or (renderer.width, renderer.height) != (buf_w, buf_h):
-            renderer = Renderer(buf_w, buf_h, fog=fog_cfg, background=SKY_BG)
+            renderer = Renderer(buf_w, buf_h, fog=fog_cfg, background=SKY_BG,
+                                sky_grad=SKY_GRAD)
         else:
             renderer.fog = fog_cfg
         # Range cull only for the chase camera; overview/side keep every wall.
         renderer.cull_distance = (view_mode == 2)
         renderer.clear()
-        cam = make_camera(view_mode, state["position"], projection,
-                          buf_w, buf_h, yaw=worm_yaw)
+        if view_mode == 2:
+            # Third-person chase cam with exponential smoothing. The target
+            # pose follows the worm behind and above; the stored pose eases
+            # toward it each frame (reference-style soft follow).
+            wp = state["position"]
+            tgt_eye = wp + np.array([0.0, 3.6, 3.8])
+            tgt_target = wp + np.array([0.0, 0.3, -2.0])
+            if cam_smooth is None:
+                s_eye, s_target = tgt_eye.copy(), tgt_target.copy()
+            else:
+                k = 1.0 - math.exp(-dt * 6.5)
+                s_eye = cam_smooth[0] + (tgt_eye - cam_smooth[0]) * k
+                s_target = cam_smooth[1] + (tgt_target - cam_smooth[1]) * k
+            cam_smooth = (s_eye, s_target)
+            cam = Camera(eye=s_eye, target=s_target, projection=projection,
+                         width=buf_w, height=buf_h)
+        else:
+            cam_smooth = None
+            cam = make_camera(view_mode, state["position"], projection,
+                              buf_w, buf_h, yaw=worm_yaw)
 
         t0 = time.perf_counter()
         tri_total = len(ground.triangles) + sum(
