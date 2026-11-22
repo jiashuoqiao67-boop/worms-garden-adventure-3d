@@ -47,10 +47,12 @@ def barycentric(p, a, b, c):
 
 
 class Renderer:
-    def __init__(self, width, height, fog=None):
+    def __init__(self, width, height, fog=None, background=(0, 0, 0)):
         self.width = width
         self.height = height
+        self.background = np.asarray(background, dtype=np.uint8)
         self.colorbuf = np.zeros((height, width, 3), dtype=np.uint8)
+        self.colorbuf[:] = self.background
         self.depthbuf = np.full((height, width), np.inf)
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
@@ -60,7 +62,7 @@ class Renderer:
         self._last_is_identity = False
 
     def clear(self):
-        self.colorbuf.fill(0)
+        self.colorbuf[:] = self.background
         self.depthbuf.fill(np.inf)
 
     def _project(self, camera, cam_point):

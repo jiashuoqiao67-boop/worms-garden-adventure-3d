@@ -31,7 +31,7 @@ from renderer import Renderer
 from transforms import model_matrix
 from main import (
     make_camera, build_wall_meshes, fit_buffer, IDENTITY, FOG_CONFIG,
-    WINDOW_W, WINDOW_H,
+    SKY_BG, WINDOW_W, WINDOW_H,
 )
 
 SCREENSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -49,21 +49,22 @@ def _save(renderer, name):
 
 def _materials(filter_mode="nearest"):
     return {
-        "grass": Material(base_color=(35, 105, 48),
+        "grass": Material(base_color=(54, 118, 70),
                           texture=make_grass_texture(64),
                           filter_mode=filter_mode),
-        "stone": Material(base_color=(112, 116, 119),
+        "stone": Material(base_color=(150, 144, 134),
                           texture=make_stone_texture(64),
                           filter_mode=filter_mode),
-        "water": Material(base_color=(10, 90, 155)),
-        "flag": Material(base_color=(40, 220, 75)),
-        "red": Material(base_color=(220, 35, 40)),
-        "gold": Material(base_color=(255, 190, 20)),
-        "bird": Material(base_color=(55, 58, 72)),
+        "walltop": Material(base_color=(92, 152, 80)),
+        "water": Material(base_color=(24, 134, 192)),
+        "flag": Material(base_color=(46, 226, 122)),
+        "red": Material(base_color=(212, 40, 52)),
+        "gold": Material(base_color=(250, 186, 34)),
+        "bird": Material(base_color=(58, 50, 84)),
         "belly": Material(base_color=(205, 200, 188)),
-        "worm": Material(base_color=(75, 195, 65)),
+        "worm": Material(base_color=(86, 206, 118)),
         "stem": Material(base_color=(96, 60, 32)),
-        "beak": Material(base_color=(230, 150, 45)),
+        "beak": Material(base_color=(255, 184, 64)),
         "leaf": Material(base_color=(58, 148, 58)),
         "eye": Material(base_color=(12, 12, 14)),
     }
@@ -73,14 +74,15 @@ def render_state(state, view_mode=0, projection="perspective",
                  width=1280, height=800, fog=None, filter_mode="bilinear",
                  t=1.0):
     mats = _materials(filter_mode)
-    renderer = Renderer(width, height, fog=fog)
+    renderer = Renderer(width, height, fog=fog, background=SKY_BG)
     cam = make_camera(view_mode, state["position"], projection, width, height)
     wall_meshes = build_wall_meshes(state)
     ground = ground_mesh(COLS, ROWS)
 
     renderer.draw_mesh(cam, ground, IDENTITY, mats["grass"])
-    for wall in wall_meshes:
-        renderer.draw_mesh(cam, wall, IDENTITY, mats["stone"])
+    for side, top in wall_meshes:
+        renderer.draw_mesh(cam, side, IDENTITY, mats["stone"])
+        renderer.draw_mesh(cam, top, IDENTITY, mats["walltop"])
 
     for hole in state["water_holes"]:
         pad = disc_mesh(0.26, (hole[0], 0.03, hole[1]))

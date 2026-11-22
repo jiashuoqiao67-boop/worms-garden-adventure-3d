@@ -9,6 +9,7 @@ Run:
 """
 
 import math
+import os
 import time
 
 import pygame
@@ -23,8 +24,8 @@ from game import (
     check_finish, reset_player, complete_level, restart_run, APPLE_COUNT,
 )
 from geometry import (
-    ground_mesh, cube_mesh, disc_mesh, worm_parts, apple_parts,
-    bird_parts, flag_mesh,
+    ground_mesh, cube_mesh, wall_box_meshes, disc_mesh, worm_parts,
+    apple_parts, bird_parts, flag_mesh,
 )
 from camera import Camera
 from renderer import Renderer
@@ -50,6 +51,8 @@ IDENTITY = model_matrix((1, 1, 1), 0.0, (0.0, 0.0, 0.0))
 
 # Part B extension 1: atmospheric depth fog configuration.
 FOG_CONFIG = {"color": np.array([176, 196, 214]), "near": 8.0, "far": 26.0}
+# Clear-sky backdrop behind the maze where no geometry is drawn.
+SKY_BG = (184, 214, 228)
 
 
 def fit_buffer(window_w, window_h, target_h):
@@ -59,18 +62,18 @@ def fit_buffer(window_w, window_h, target_h):
     return w, target_h
 
 
-def make_camera(view_mode, worm_pos, projection, width, height):
+def make_camera(view_mode, worm_pos, projection, width, height, yaw=0.0):
     if view_mode == 1:      # side
         eye = np.array([COLS + 6.0, 4.0, ROWS / 2.0])
         target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
-    elif view_mode == 2:    # follow: directly overhead, bird's-eye view
-        eye = worm_pos + np.array([0.0, 7.5, 0.0])
-        target = worm_pos.copy()
-        # Up vector chosen so the camera right matches the overview view
-        # (screen right = world -X); avoids degeneracy when looking straight
-        # down and keeps the A/D mapping consistent.
+    elif view_mode == 2:    # third-person chase cam: fixed north-up heading,
+        # camera sits behind (+Z) and above the worm, looking ahead (-Z). The
+        # maze never spins, matching the reference follow view.
+        back, cam_height, look = 3.8, 3.6, 2.0
+        eye = worm_pos + np.array([0.0, cam_height, back])
+        target = worm_pos + np.array([0.0, 0.3, -look])
         return Camera(eye=eye, target=target, projection=projection,
-                      width=width, height=height, up=(0.0, 0.0, -1.0))
+                      width=width, height=height)
     else:                   # elevated overview
         eye = np.array([COLS / 2.0, 13.0, ROWS + 6.0])
         target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
@@ -79,7 +82,9 @@ def make_camera(view_mode, worm_pos, projection, width, height):
 
 
 def build_wall_meshes(state):
-    return [cube_mesh(size, center) for center, size in state["wall_boxes"]]
+    """Return [(side_mesh, top_mesh), ...]; side carries the grey wall face,
+    top carries the green wall-cap material."""
+    return [wall_box_meshes(center, size) for center, size in state["wall_boxes"]]
 
 
 def build_static_meshes(state):
@@ -92,7 +97,61 @@ def build_static_meshes(state):
     return pads, start_flag, finish_flag
 
 
-def main():
+def draw_minimap(screen, state, window_w, window_h, tiny_font):
+    """Bottom-right corridor map: wall blocks, apples, birds, worm and exit."""
+    mw, mh = 246, 168
+    mx, my = window_w - mw - 22, window_h - mh - 22
+    panel = pygame.Surface((mw, mh), pygame.SRCALPHA)
+    pygame.draw.rect(panel, (8, 16, 24, 168), panel.get_rect(),
+                     border_radius=12)
+    pygame.draw.rect(panel, (120, 190, 150, 90), panel.get_rect(), 1,
+                     border_radius=12)
+    screen.blit(panel, (mx, my))
+
+    ox, oy = mx + 12, my + 18
+    sx = (mw - 24) / COLS
+    sy = (mh - 30) / ROWS
+
+    def mp(x, z):
+        return (ox + x * sx, oy + z * sy)
+
+    # Wall blocks from the cached wall boxes (centre + size -> min/max).
+    for center, size in state["wall_boxes"]:
+        x0, z0 = center[0] - size[0] / 2.0, center[2] - size[2] / 2.0
+        x1, z1 = center[0] + size[0] / 2.0, center[2] + size[2] / 2.0
+        p0, p1 = mp(x0, z0), mp(x1, z1)
+        pygame.draw.rect(screen, (86, 118, 96),
+                         pygame.Rect(p0[0], p0[1],
+                                     max(1, p1[0] - p0[0]),
+                                     max(1, p1[1] - p0[1])))
+    # Apples: red ruby / gold medal.
+    for apple in state["apples"]:
+        if apple["collected"]:
+            continue
+        c = apple["cell"]
+        p = mp(c[0] + 0.5, c[1] + 0.5)
+        col = (250, 186, 34) if apple["value"] == 100 else (212, 40, 52)
+        pygame.draw.circle(screen, col, (int(p[0]), int(p[1])), 3)
+    # Birds (dark violet).
+    for bird in state["birds"]:
+        p = mp(bird["pos"][0], bird["pos"][2])
+        pygame.draw.circle(screen, (150, 130, 190),
+                           (int(p[0]), int(p[1])), 3)
+    # Exit marker (checkered finish) and start flag.
+    pf = mp(FINISH_CELL[0] + 0.5, FINISH_CELL[1] + 0.5)
+    pygame.draw.rect(screen, (255, 240, 240),
+                     pygame.Rect(int(pf[0] - 3), int(pf[1] - 3), 6, 6))
+    ps = mp(START_CELL[0] + 0.5, START_CELL[1] + 0.5)
+    pygame.draw.circle(screen, (46, 226, 122), (int(ps[0]), int(ps[1])), 3)
+    # Player worm.
+    pp = mp(state["position"][0], state["position"][2])
+    pygame.draw.circle(screen, (120, 255, 150), (int(pp[0]), int(pp[1])), 3)
+    pygame.draw.circle(screen, (12, 20, 28), (int(pp[0]), int(pp[1])), 4, 1)
+    screen.blit(tiny_font.render("MAP", True, (170, 220, 190)),
+                (mx + 14, my + 5))
+
+
+def main(max_frames=None):
     pygame.init()
     window_w, window_h = WINDOW_W, WINDOW_H
     screen = pygame.display.set_mode((window_w, window_h), pygame.RESIZABLE)
@@ -100,21 +159,24 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("Arial", 20)
     small_font = pygame.font.SysFont("Arial", 16)
+    tiny_font = pygame.font.SysFont("Arial", 13)
 
-    # Materials
-    grass_mat = Material(base_color=(35, 105, 48),
+    # Materials (palette matched to the garden-ruin reference: mossy green
+    # wall tops over warm weathered stone, bright green worm, dark violet bird).
+    grass_mat = Material(base_color=(54, 118, 70),
                          texture=make_grass_texture(64))
-    stone_mat = Material(base_color=(112, 116, 119),
+    stone_mat = Material(base_color=(150, 144, 134),
                          texture=make_stone_texture(64))
-    worm_mat = Material(base_color=(75, 195, 65))
-    red_mat = Material(base_color=(220, 35, 40))
-    gold_mat = Material(base_color=(255, 190, 20))
-    bird_mat = Material(base_color=(55, 58, 72))
+    walltop_mat = Material(base_color=(92, 152, 80))
+    worm_mat = Material(base_color=(86, 206, 118))
+    red_mat = Material(base_color=(212, 40, 52))
+    gold_mat = Material(base_color=(250, 186, 34))
+    bird_mat = Material(base_color=(58, 50, 84))
     belly_mat = Material(base_color=(205, 200, 188))
-    water_mat = Material(base_color=(10, 90, 155))
-    flag_mat = Material(base_color=(40, 220, 75))
+    water_mat = Material(base_color=(24, 134, 192))
+    flag_mat = Material(base_color=(46, 226, 122))
     stem_mat = Material(base_color=(96, 60, 32))
-    beak_mat = Material(base_color=(230, 150, 45))
+    beak_mat = Material(base_color=(255, 184, 64))
     leaf_mat = Material(base_color=(58, 148, 58))
     eye_mat = Material(base_color=(12, 12, 14))
 
@@ -125,7 +187,7 @@ def main():
     jump = JumpState()
     particles = []
 
-    view_mode = 0
+    view_mode = 2
     projection = "perspective"
     worm_yaw = 0.0
     quality = 2
@@ -138,8 +200,10 @@ def main():
     renderer = None
 
     running = True
+    frames = 0
     while running:
         dt = min(clock.tick(60) / 1000.0, 0.1)
+        frames += 1
 
         # ---------------- Events / input ----------------
         for event in pygame.event.get():
@@ -240,18 +304,20 @@ def main():
         buf_w, buf_h = fit_buffer(window_w, window_h, target_h)
         fog_cfg = FOG_CONFIG if fog_enabled else None
         if renderer is None or (renderer.width, renderer.height) != (buf_w, buf_h):
-            renderer = Renderer(buf_w, buf_h, fog=fog_cfg)
+            renderer = Renderer(buf_w, buf_h, fog=fog_cfg, background=SKY_BG)
         else:
             renderer.fog = fog_cfg
             renderer.clear()
         cam = make_camera(view_mode, state["position"], projection,
-                          buf_w, buf_h)
+                          buf_w, buf_h, yaw=worm_yaw)
 
         t0 = time.perf_counter()
-        tri_total = len(ground.triangles) + sum(len(w.triangles) for w in wall_meshes)
+        tri_total = len(ground.triangles) + sum(
+            len(s.triangles) + len(t.triangles) for s, t in wall_meshes)
         renderer.draw_mesh(cam, ground, IDENTITY, grass_mat)
-        for wall in wall_meshes:
-            renderer.draw_mesh(cam, wall, IDENTITY, stone_mat)
+        for side, top in wall_meshes:
+            renderer.draw_mesh(cam, side, IDENTITY, stone_mat)
+            renderer.draw_mesh(cam, top, IDENTITY, walltop_mat)
 
         # Water holes (flat blue discs on the ground) and flags: cached once.
         for pad in water_pads:
@@ -317,20 +383,66 @@ def main():
 
         elapsed = time.time() - start_time
         mm, ss = int(elapsed // 60), int(elapsed % 60)
-        screen.blit(font.render(f"LEVEL: {state['level']}", True, (255, 255, 255)), (15, 12))
-        screen.blit(font.render(f"SCORE: {state['score']}", True, (255, 215, 60)), (160, 12))
-        screen.blit(font.render(f"APPLES: {state['collected']}/{APPLE_COUNT}", True, (255, 130, 130)), (330, 12))
-        screen.blit(font.render(f"TIME: {mm:02d}:{ss:02d}", True, (255, 255, 255)), (520, 12))
-        screen.blit(small_font.render(
-            f"{projection.upper()}  |  VIEW {view_mode + 1}  |  {label} {buf_w}x{buf_h}  |  "
-            f"{render_ms:.1f} ms  |  {triangle_count} tris  |  "
-            f"FOG {'ON' if fog_enabled else 'OFF'}  |  FILTER {'BILINEAR' if bilinear else 'NEAREST'}",
-            True, (200, 200, 200)), (15, 44))
-        screen.blit(small_font.render(
-            "WASD move  SPACE jump  P projection  1/2/3 view  F5 quality  F fog  T filter  R restart  click firework",
-            True, (180, 180, 180)), (15, window_h - 26))
+        fps = 1.0 / max(dt, 1e-4)
+
+        # ---- Top information panel (dark translucent + green divider) ----
+        panel = pygame.Surface((window_w - 40, 62), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (10, 20, 30, 176), panel.get_rect(),
+                         border_radius=12)
+        screen.blit(panel, (20, 12))
+        bar = pygame.Surface((window_w - 40, 3), pygame.SRCALPHA)
+        pygame.draw.rect(bar, (120, 220, 150, 120), bar.get_rect())
+        screen.blit(bar, (20, 73))
+
+        def _text(txt, color, pos, fnt=font):
+            sh = fnt.render(txt, True, (8, 14, 20))
+            screen.blit(sh, (pos[0] + 1, pos[1] + 1))
+            screen.blit(fnt.render(txt, True, color), pos)
+
+        _text(f"LEVEL {state['level']}", (245, 248, 255), (40, 26))
+        _text(f"SCORE {state['score']}", (255, 200, 60), (190, 26))
+        _text(f"APPLES {state['collected']}/{APPLE_COUNT}",
+              (255, 140, 140), (350, 26))
+        _text(f"TIME {mm:02d}:{ss:02d}", (245, 248, 255), (550, 26))
+        fps_col = (150, 240, 170) if dt < 0.021 else (255, 170, 120)
+        _text(f"{int(fps)} FPS", fps_col, (760, 29), small_font)
+
+        # ---- Central unlock hint ----
+        if state["collected"] < APPLE_COUNT:
+            hint = f"Collect all {APPLE_COUNT} apples to unlock the checkered exit"
+            hint_col = (255, 200, 60)
+        else:
+            hint = "EXIT UNLOCKED - reach the checkered flag!"
+            hint_col = (120, 255, 160)
+        ht = small_font.render(hint, True, hint_col)
+        screen.blit(small_font.render(hint, True, (8, 14, 20)),
+                    (window_w // 2 - ht.get_width() // 2 + 1, 83))
+        screen.blit(ht, (window_w // 2 - ht.get_width() // 2, 82))
+
+        # ---- Bottom control bar ----
+        bottom = pygame.Surface((window_w, 30), pygame.SRCALPHA)
+        pygame.draw.rect(bottom, (10, 26, 18, 170), bottom.get_rect())
+        screen.blit(bottom, (0, window_h - 30))
+        _text("WASD / ARROWS  MOVE     SPACE  JUMP     CLICK  FIREWORKS     "
+              "P  PROJECTION     R  RESTART",
+              (220, 238, 228), (40, window_h - 26), small_font)
+
+        # ---- Renderer debug line (small, bottom-left above the bar) ----
+        _text(f"{projection.upper()}  |  VIEW {view_mode + 1}  |  "
+              f"{label} {buf_w}x{buf_h}  |  {render_ms:.1f} ms  |  "
+              f"{triangle_count} tris  |  FOG {'ON' if fog_enabled else 'OFF'}  |  "
+              f"FILTER {'BILINEAR' if bilinear else 'NEAREST'}",
+              (170, 190, 180), (15, window_h - 48), tiny_font)
+
+        draw_minimap(screen, state, window_w, window_h, tiny_font)
 
         pygame.display.flip()
+
+        shot = os.environ.get("MAIN_SHOT")
+        if shot:
+            pygame.image.save(screen, shot)
+        if max_frames is not None and frames >= max_frames:
+            running = False
 
     pygame.quit()
 

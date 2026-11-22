@@ -38,16 +38,19 @@ def render_once(state, wall_meshes, ground, cam, mats, t, static=None):
     renderer = Renderer(cam.width, cam.height)
     grass_mat, stone_mat, water_mat, flag_mat, red_mat, gold_mat, bird_mat, worm_mat = mats
     stem_mat = Material(base_color=(96, 60, 32))
-    beak_mat = Material(base_color=(230, 150, 45))
+    beak_mat = Material(base_color=(255, 184, 64))
     leaf_mat = Material(base_color=(58, 148, 58))
     eye_mat = Material(base_color=(12, 12, 14))
     belly_mat = Material(base_color=(205, 200, 188))
+    walltop_mat = Material(base_color=(92, 152, 80))
 
     renderer.draw_mesh(cam, ground, IDENTITY, grass_mat)
-    for wall in wall_meshes:
-        renderer.draw_mesh(cam, wall, IDENTITY, stone_mat)
+    for side, top in wall_meshes:
+        renderer.draw_mesh(cam, side, IDENTITY, stone_mat)
+        renderer.draw_mesh(cam, top, IDENTITY, walltop_mat)
 
-    tri_total = len(ground.triangles) + sum(len(w.triangles) for w in wall_meshes)
+    tri_total = len(ground.triangles) + sum(
+        len(s.triangles) + len(t.triangles) for s, t in wall_meshes)
 
     if static is None:
         pads = [disc_mesh(0.26, (hole[0], 0.03, hole[1]))
@@ -98,14 +101,14 @@ def main():
     pygame.display.set_mode((1, 1))  # offscreen; no real window needed
 
     mats = (
-        Material(base_color=(35, 105, 48), texture=make_grass_texture(64)),
-        Material(base_color=(112, 116, 119), texture=make_stone_texture(64)),
-        Material(base_color=(10, 90, 155)),
-        Material(base_color=(40, 220, 75)),
-        Material(base_color=(220, 35, 40)),
-        Material(base_color=(255, 190, 20)),
-        Material(base_color=(55, 58, 72)),
-        Material(base_color=(75, 195, 65)),
+        Material(base_color=(54, 118, 70), texture=make_grass_texture(64)),
+        Material(base_color=(150, 144, 134), texture=make_stone_texture(64)),
+        Material(base_color=(24, 134, 192)),
+        Material(base_color=(46, 226, 122)),
+        Material(base_color=(212, 40, 52)),
+        Material(base_color=(250, 186, 34)),
+        Material(base_color=(58, 50, 84)),
+        Material(base_color=(86, 206, 118)),
     )
 
     state = build_level(1, seed=12)

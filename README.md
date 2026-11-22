@@ -61,7 +61,8 @@ The original supplied 2D reference (kept for comparison) is in
 | Window close / ESC | Quit |
 
 The HUD shows the active projection, camera view, internal framebuffer size,
-render time, triangle count, fog state and texture filter.
+render time, triangle count, fog state and texture filter, plus a bottom-right
+corridor minimap marking the worm, apples, birds, start and finish.
 
 ## Project layout
 

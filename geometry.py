@@ -46,8 +46,25 @@ CUBE_TRIANGLES = np.array([
 ], dtype=int)
 
 
+# Cube triangle indices: the last two in the top (+Y) face, the rest form
+# the four side walls plus the bottom face. Used to give wall tops a separate
+# material (green cap) from the grey side faces.
+WALL_SIDE_TRIS = np.array([0, 1, 2, 3, 4, 5, 6, 7, 10, 11], dtype=int)
+WALL_TOP_TRIS = np.array([8, 9], dtype=int)
+
+
 def unit_cube() -> Mesh:
     return Mesh(vertices=CUBE_VERTICES.copy(), triangles=CUBE_TRIANGLES.copy())
+
+
+def wall_box_meshes(center, size):
+    """Split a wall box into a side mesh and a separate top-cap mesh so the
+    top can carry its own material. Returns (side_mesh, top_mesh)."""
+    sx, sy, sz = size
+    verts = CUBE_VERTICES * np.array([sx, sy, sz]) + np.asarray(center, dtype=float)
+    side = Mesh(vertices=verts, triangles=CUBE_TRIANGLES[WALL_SIDE_TRIS])
+    top = Mesh(vertices=verts, triangles=CUBE_TRIANGLES[WALL_TOP_TRIS])
+    return side, top
 
 
 def cube_mesh(size=(1.0, 1.0, 1.0), center=(0.0, 0.0, 0.0)) -> Mesh:
