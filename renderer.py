@@ -57,6 +57,11 @@ class Renderer:
         # points away from the camera (+Z is forward here). Flat horizontal
         # faces whose normal is nearly parallel to the image plane are kept.
         self.backface_cull = True
+        # Scene-level distance/range cull, enabled only for the chase camera
+        # (where most walls lie behind or beyond the fog). Off for overview /
+        # side views so the whole maze stays on screen with no extra per-mesh
+        # centre work.
+        self.cull_distance = False
         # Cache for the identity-model-matrix check (see draw_mesh).
         self._last_model = None
         self._last_is_identity = False
@@ -188,6 +193,22 @@ class Renderer:
             is_identity = np.allclose(model_matrix, np.eye(4))
             self._last_model = model_matrix
             self._last_is_identity = is_identity
+
+        # Bounding-centre quick reject (scene-level cull, mirroring the
+        # reference range cull): skip a whole mesh that sits behind the near
+        # plane or beyond the fog far plane, where it already blends into the
+        # backdrop. The centre is cached per mesh so it is computed once.
+        if self.cull_distance:
+            far = self.fog["far"] if self.fog is not None else 60.0
+            center = getattr(mesh, "_cull_center", None)
+            if center is None:
+                center = mesh.vertices.mean(axis=0)
+                mesh._cull_center = center
+            if not is_identity:
+                center = transform_point(model_matrix, center)
+            cc = camera.to_camera_space(center)
+            if cc[2] < camera.near or cc[2] > far:
+                return
 
         for tri in mesh.triangles:
             if is_identity:

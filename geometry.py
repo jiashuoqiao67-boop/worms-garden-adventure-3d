@@ -229,15 +229,15 @@ def worm_parts(center=(0.0, 0.0, 0.0)):
     for i, z in enumerate(seg_z):
         r = 0.105 + 0.02 * (i / 3.0)
         body.append(_sph((0.0, 0.0, z), (r, r, 0.075),
-                         rings=5, sectors=8))
+                         rings=4, sectors=6))
     body.append(_sph((0.0, 0.01, 0.21),
-                      (0.14, 0.135, 0.125), rings=6, sectors=10))
+                      (0.14, 0.135, 0.125), rings=5, sectors=8))
     # Eyes sit proud of the front/top of the head, not buried inside it.
     eyes = [
         _sph((-0.06, 0.075, 0.305),
-             (0.026, 0.026, 0.026), rings=4, sectors=6),
+             (0.026, 0.026, 0.026), rings=3, sectors=5),
         _sph((0.06, 0.075, 0.305),
-             (0.026, 0.026, 0.026), rings=4, sectors=6),
+             (0.026, 0.026, 0.026), rings=3, sectors=5),
     ]
     return [(_merge_meshes(body), "worm"),
             (_merge_meshes(eyes), "eye")]
@@ -252,10 +252,10 @@ def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
 
 def apple_parts(center=(0.0, 0.0, 0.0)):
     """Apple: flattened fruit, short stem and one leaf (local origin)."""
-    fruit = [_sph((0.0, 0.0, 0.0), (0.15, 0.135, 0.15), rings=6, sectors=10)]
+    fruit = [_sph((0.0, 0.0, 0.0), (0.15, 0.135, 0.15), rings=5, sectors=8)]
     stem = [cube_mesh((0.024, 0.10, 0.024), (0.0, 0.17, 0.0))]
     leaf = [_sph((0.06, 0.19, 0.0),
-                 (0.06, 0.014, 0.032), rings=4, sectors=6)]
+                 (0.06, 0.014, 0.032), rings=3, sectors=5)]
     return [(_merge_meshes(fruit), "fruit"),
             (_merge_meshes(stem), "stem"),
             (_merge_meshes(leaf), "leaf")]
@@ -272,25 +272,25 @@ def bird_parts(center=(0.0, 0.0, 0.0)):
     """Bird: body, head, folded wings and tail, plus a beak and eyes
     (local origin, head/beak face +Z)."""
     body = [
-        _sph((0.0, 0.0, 0.0), (0.15, 0.11, 0.19), rings=5, sectors=8),
+        _sph((0.0, 0.0, 0.0), (0.15, 0.11, 0.19), rings=4, sectors=6),
         _sph((0.0, 0.05, 0.17),
-             (0.09, 0.085, 0.09), rings=5, sectors=8),
+             (0.09, 0.085, 0.09), rings=4, sectors=6),
         _sph((-0.14, 0.02, -0.04),
-             (0.11, 0.016, 0.10), rings=4, sectors=6),
+             (0.11, 0.016, 0.10), rings=3, sectors=5),
         _sph((0.14, 0.02, -0.04),
-             (0.11, 0.016, 0.10), rings=4, sectors=6),
+             (0.11, 0.016, 0.10), rings=3, sectors=5),
         _sph((0.0, 0.02, -0.21),
-             (0.05, 0.02, 0.085), rings=4, sectors=6),
+             (0.05, 0.02, 0.085), rings=3, sectors=5),
     ]
     belly = [_sph((0.0, -0.02, 0.05),
-                  (0.11, 0.08, 0.13), rings=4, sectors=6)]
+                  (0.11, 0.08, 0.13), rings=3, sectors=5)]
     beak = [cube_mesh((0.03, 0.028, 0.08),
                       (0.0, 0.03, 0.30))]
     eyes = [
         _sph((-0.085, 0.06, 0.18),
-             (0.02, 0.02, 0.02), rings=4, sectors=6),
+             (0.02, 0.02, 0.02), rings=3, sectors=5),
         _sph((0.085, 0.06, 0.18),
-             (0.02, 0.02, 0.02), rings=4, sectors=6),
+             (0.02, 0.02, 0.02), rings=3, sectors=5),
     ]
     return [(_merge_meshes(body), "bird"),
             (_merge_meshes(belly), "belly"),

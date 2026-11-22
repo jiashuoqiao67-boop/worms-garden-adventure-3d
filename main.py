@@ -307,7 +307,9 @@ def main(max_frames=None):
             renderer = Renderer(buf_w, buf_h, fog=fog_cfg, background=SKY_BG)
         else:
             renderer.fog = fog_cfg
-            renderer.clear()
+        # Range cull only for the chase camera; overview/side keep every wall.
+        renderer.cull_distance = (view_mode == 2)
+        renderer.clear()
         cam = make_camera(view_mode, state["position"], projection,
                           buf_w, buf_h, yaw=worm_yaw)
 
