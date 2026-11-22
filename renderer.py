@@ -11,7 +11,7 @@ sampling with perspective-correct UV interpolation.
 
 import numpy as np
 
-from transforms import transform_point, normalized, dot
+from transforms import transform_point, normalized
 from camera import (
     clip_triangle_near,
     perspective_project,
@@ -23,6 +23,8 @@ from materials import (
 
 _EPS = 1e-9
 DEFAULT_LIGHT_DIR = (0.5, 1.0, 0.3)
+# Pre-normalized once; the light direction is constant across the scene.
+_LIGHT_NORM = normalized(DEFAULT_LIGHT_DIR)
 
 
 def _edge(a, b, p):
@@ -93,15 +95,12 @@ class Renderer:
         ys = np.arange(y0, y1 + 1, dtype=float) + 0.5
         gx, gy = np.meshgrid(xs, ys)
 
-        def edge(p, q):
-            return (gx - p[0]) * (q[1] - p[1]) - (gy - p[1]) * (q[0] - p[0])
-
         area = _edge(a, b, c)
         if abs(area) < _EPS:
             return
-        wa = edge(b, c) / area
-        wb = edge(c, a) / area
-        wc = edge(a, b) / area
+        wa = ((gx - b[0]) * (c[1] - b[1]) - (gy - b[1]) * (c[0] - b[0])) / area
+        wb = ((gx - c[0]) * (a[1] - c[1]) - (gy - c[1]) * (a[0] - c[0])) / area
+        wc = ((gx - a[0]) * (b[1] - a[1]) - (gy - a[1]) * (b[0] - a[0])) / area
 
         mask = (wa >= -_EPS) & (wb >= -_EPS) & (wc >= -_EPS)
         invz = wa / za + wb / zb + wc / zc
@@ -155,7 +154,7 @@ class Renderer:
     def draw_mesh(self, camera, mesh, model_matrix, material,
                   light_dir=DEFAULT_LIGHT_DIR):
         """Transform, light, project and rasterize every triangle of a mesh."""
-        light = normalized(light_dir)
+        light = _LIGHT_NORM if light_dir is DEFAULT_LIGHT_DIR else normalized(light_dir)
         # Most meshes already hold world-space vertices under an identity
         # model matrix; skip the 4x4 multiply in that common case.
         is_identity = np.allclose(model_matrix, np.eye(4))
@@ -174,7 +173,8 @@ class Renderer:
 
             # Flat shading: one face normal and intensity per triangle.
             normal = face_normal(world_pts[0], world_pts[1], world_pts[2])
-            intensity = AMBIENT + DIFFUSE * max(0.0, dot(normal, light))
+            nd = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2]
+            intensity = AMBIENT + DIFFUSE * (nd if nd > 0.0 else 0.0)
             shaded = shade(material.base_color, normal, light,
                            intensity=intensity)
 

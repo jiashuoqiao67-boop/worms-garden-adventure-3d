@@ -38,10 +38,18 @@ class Camera:
         return forward, right, up
 
     def to_camera_space(self, point):
-        """Transform a world point into camera-space coordinates."""
-        d = np.asarray(point, dtype=float) - self.eye
+        """Transform a world point into camera-space coordinates (scalar dot
+        products to avoid per-vertex NumPy array allocation)."""
+        ex, ey, ez = self.eye
+        dx = point[0] - ex
+        dy = point[1] - ey
+        dz = point[2] - ez
         f, r, u = self._forward, self._right, self._up
-        return np.array([dot(d, r), dot(d, u), dot(d, f)])
+        return np.array([
+            dx * r[0] + dy * r[1] + dz * r[2],
+            dx * u[0] + dy * u[1] + dz * u[2],
+            dx * f[0] + dy * f[1] + dz * f[2],
+        ])
 
     def project(self, point):
         """Project a world point to screen pixels; None if behind the near plane."""

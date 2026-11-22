@@ -7,6 +7,7 @@ Lighting (flat shading, one colour per triangle):
 with ka = 0.25, kd = 0.75; L points from the surface toward the light.
 """
 
+import math
 import random
 from dataclasses import dataclass
 
@@ -106,17 +107,22 @@ def sample_bilinear(tex, u, v):
 # ---------------------------------------------------------------------------
 
 def face_normal(a, b, c):
-    """Unit face normal from world-space triangle vertices.
+    """Unit face normal from world-space triangle vertices (scalar math to
+    avoid per-triangle NumPy array allocation).
 
     Degenerate triangles (zero area) fall back to an upward normal; the
     rasterizer drops them later by its edge-area test.
     """
-    n = np.cross(np.asarray(b, float) - np.asarray(a, float),
-                 np.asarray(c, float) - np.asarray(a, float))
-    length = np.linalg.norm(n)
+    ax, ay, az = a[0], a[1], a[2]
+    ux, uy, uz = b[0] - ax, b[1] - ay, b[2] - az
+    vx, vy, vz = c[0] - ax, c[1] - ay, c[2] - az
+    nx = uy * vz - uz * vy
+    ny = uz * vx - ux * vz
+    nz = ux * vy - uy * vx
+    length = math.sqrt(nx * nx + ny * ny + nz * nz)
     if length < 1e-10:
         return np.array([0.0, 1.0, 0.0])
-    return n / length
+    return np.array([nx / length, ny / length, nz / length])
 
 
 def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE,
