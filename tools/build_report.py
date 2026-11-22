@@ -43,10 +43,10 @@ def bullet(doc, text):
 def perf_table(doc):
     rows = [
         ("Preset", "Resolution", "Triangles", "Mean ms", "Median ms", "FPS"),
-        ("FAST", "672x420", "6248", "605.27", "581.20", "1.7"),
-        ("BALANCED", "1120x700", "6248", "617.91", "612.00", "1.6"),
-        ("HIGH", "1600x1000", "6248", "697.07", "692.52", "1.4"),
-        ("NATIVE", "1280x800", "6248", "674.91", "650.82", "1.5"),
+        ("FAST", "672x420", "6248", "238.64", "223.87", "4.5"),
+        ("BALANCED", "1120x700", "6248", "228.71", "228.74", "4.4"),
+        ("HIGH", "1600x1000", "6248", "234.94", "237.85", "4.2"),
+        ("NATIVE", "1280x800", "6248", "232.33", "222.53", "4.5"),
     ]
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
@@ -293,18 +293,22 @@ def main():
         "The scene contains 6248 triangles.")
     perf_table(doc)
     doc.add_paragraph(
-        "The measured render time is roughly 0.58-0.69 seconds per frame, which "
-        "is below real-time. This is reported honestly: the renderer is a "
-        "pure Python/NumPy software rasterizer, and the dominant cost is the "
-        "per-triangle Python and NumPy object work (transform, clip, normal, "
-        "shade, mesh setup) rather than pixel fill. Resolution has only a "
-        "moderate effect (about 19% from FAST to HIGH), which supports that "
-        "diagnosis. The hot path was optimized by caching the camera basis per "
-        "instance, skipping the identity-model 4x4 multiply, removing "
-        "reduced per-triangle lighting normalization, reusing the "
+        "The measured render time is roughly 0.22-0.24 seconds per frame "
+        "(4.2-4.5 fps), which is still below real-time. This is reported "
+        "honestly: the renderer is a pure CPU software rasterizer, and the "
+        "dominant cost is the per-triangle Python and object work (transform, "
+        "clip, normal, shade, mesh setup) rather than pixel fill. Resolution "
+        "has only a small effect (about 6% from FAST to HIGH), which supports "
+        "that diagnosis. The hot path was optimized by caching the camera "
+        "basis per instance, skipping the identity-model 4x4 multiply, "
+        "removing redundant per-triangle lighting normalization, reusing the "
         "frame/depth buffers between frames, and replacing per-triangle NumPy "
-        "vector allocations with scalar dot/cross/normal math; a compiled JIT "
-        "or a spatial/caching pass would be the next optimization.")
+        "vector allocations with scalar dot/cross/normal math. As the optional "
+        "CPU optimization noted in handbook p.30, the per-fragment raster scan "
+        "is additionally compiled with Numba ``@njit``; Numba is not a Part A "
+        "prerequisite, and if it is absent the renderer automatically falls "
+        "back to the pure Python/NumPy path. A spatial/caching pass or a "
+        "compiled data-oriented layout would be the next optimization.")
     add_image(doc, "07_low_res_672x420.png", 4.6, "Figure 10. Low internal resolution 672x420.")
     add_image(doc, "08_high_res_1600x1000.png", 4.6, "Figure 11. High internal resolution 1600x1000: finer wall edges.")
     doc.add_paragraph("Main limitations:")

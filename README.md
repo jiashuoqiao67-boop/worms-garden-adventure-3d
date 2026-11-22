@@ -12,6 +12,7 @@ renderer; no game engine or high-level 3D library is used.
 - NumPy: 2.5.5
 - Pillow: 13.0.0
 - Pygame: 2.6.1
+- Numba: 0.68.1 (optional CPU JIT; the game runs without it)
 
 ## Install
 
@@ -25,6 +26,14 @@ python -m venv .venv
 # source .venv/bin/activate
 
 pip install -r requirements.txt
+```
+
+Optional (handbook p.30): install Numba to JIT-compile the rasterization
+hot path. It is **not** required for Part A; if Numba is missing the
+renderer automatically uses the pure Python/NumPy path:
+
+```bash
+pip install numba
 ```
 
 ## Run

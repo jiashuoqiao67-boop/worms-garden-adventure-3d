@@ -20,6 +20,7 @@ from camera import (
 from materials import (
     face_normal, shade, sample_nearest, sample_bilinear, AMBIENT, DIFFUSE,
 )
+from renderer_jit import HAS_NUMBA, rasterize_njit
 
 _EPS = 1e-9
 DEFAULT_LIGHT_DIR = (0.5, 1.0, 0.3)
@@ -81,6 +82,27 @@ class Renderer:
         a, b, c = screen
         za, zb, zc = depths
         H, W = self.depthbuf.shape
+
+        if HAS_NUMBA:
+            sx = np.asarray([a[0], b[0], c[0]], dtype=float)
+            sy = np.asarray([a[1], b[1], c[1]], dtype=float)
+            sz = np.asarray([za, zb, zc], dtype=float)
+            base = np.clip(np.asarray(rgb, dtype=float), 0, 255)
+            use_tex = texture is not None and uvs is not None
+            tex = texture if use_tex else np.empty((0, 0, 3), dtype=np.uint8)
+            uv = np.asarray(uvs, dtype=float) if use_tex else np.empty((0, 2))
+            if self.fog is not None:
+                fog_color = np.asarray(self.fog["color"], dtype=float)
+                fog_near, fog_far = self.fog["near"], self.fog["far"]
+                use_fog = True
+            else:
+                fog_color = np.zeros(3)
+                fog_near, fog_far, use_fog = 0.0, 1.0, False
+            rasterize_njit(self.colorbuf, self.depthbuf, sx, sy, sz, base,
+                           tex, uv, float(intensity), use_tex,
+                           filter_mode == "bilinear", use_fog,
+                           fog_color, fog_near, fog_far)
+            return
 
         x0 = max(0, int(np.floor(min(a[0], b[0], c[0]))))
         x1 = min(W - 1, int(np.ceil(max(a[0], b[0], c[0]))))

@@ -1,3 +1,6 @@
 numpy==2.5.5
 pillow==13.0.0
 pygame==2.6.1
+# Optional CPU JIT optimization (handbook p.30); NOT required for Part A.
+# The game falls back to the pure Python/NumPy rasterizer if Numba is absent.
+#   pip install numba
