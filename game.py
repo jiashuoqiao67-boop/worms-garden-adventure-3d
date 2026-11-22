@@ -35,6 +35,10 @@ BIRD_HEIGHT = 0.55
 APPLE_HEIGHT = 0.28
 APPLE_BOB_AMP = 0.05
 APPLE_BOB_FREQ = 1.5
+# How many recently visited cells a bird remembers; it prefers unvisited
+# corridor neighbours so it patrols a wider area instead of oscillating
+# between the same two or three cells.
+BIRD_MEMORY = 6
 
 REWARD_VALUES = [APPLE_VALUE_SILVER, APPLE_VALUE_SILVER,
                  APPLE_VALUE_SILVER, APPLE_VALUE_GOLD]
@@ -88,6 +92,7 @@ def build_level(level, seed=None, cols=COLS, rows=ROWS,
             "cell": cell,
             "target": target,
             "previous": cell,
+            "recent": [cell],
             "pos": cell_center_3d(cell[0], cell[1], BIRD_HEIGHT),
             "speed": BIRD_SPEED + rng.uniform(-0.2, 0.4),
         })
@@ -127,10 +132,16 @@ def update_birds(state, dt):
             bird["pos"] = target_pos.copy()
             bird["previous"] = bird["cell"]
             bird["cell"] = bird["target"]
+            recent = bird.setdefault("recent", [bird["cell"]])
+            recent.append(bird["cell"])
+            del recent[:-BIRD_MEMORY]
             neighbours = get_available_neighbors(
                 state["maze"], bird["cell"], cols, rows)
+            # Prefer a neighbour not visited recently, then one that is not
+            # the cell just left; fall back to any neighbour in a dead end.
+            fresh = [n for n in neighbours if n not in recent]
             alternatives = [n for n in neighbours if n != bird["previous"]]
-            choices = alternatives if alternatives else neighbours
+            choices = fresh or alternatives or neighbours
             if choices:
                 bird["target"] = random.choice(choices)
         else:

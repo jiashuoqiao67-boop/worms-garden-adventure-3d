@@ -216,7 +216,9 @@ def main():
     doc.add_paragraph(
         "Animations in the 3D world include: apples bobbing vertically around "
         "APPLE_HEIGHT with a sine offset, birds hovering at BIRD_HEIGHT while "
-        "following corridor neighbours, a 3D spark trail emitted while moving, "
+        "following corridor neighbours and remembering their last few cells so "
+        "they patrol a wider route instead of oscillating in a small area, "
+        "a 3D spark trail emitted while moving, "
         "and a coloured firework burst on mouse click. Every particle stores a "
         "3D position and velocity in world space, with gravity, damping and a "
         "bounded lifetime and count.")
