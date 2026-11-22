@@ -70,7 +70,7 @@ def _materials(filter_mode="nearest"):
 
 
 def render_state(state, view_mode=0, projection="perspective",
-                 width=1120, height=700, fog=None, filter_mode="nearest",
+                 width=1280, height=800, fog=None, filter_mode="bilinear",
                  t=1.0):
     mats = _materials(filter_mode)
     renderer = Renderer(width, height, fog=fog)
@@ -192,7 +192,8 @@ def main():
     _save(render_state(state, 2, "perspective"), "06_gameplay_follow.png")
 
     # 14.8 low vs high internal resolution, fixed camera/scene.
-    _save(render_state(state, 0, "perspective", width=672, height=420),
+    _save(render_state(state, 0, "perspective", width=672, height=420,
+                       filter_mode="nearest"),
           "07_low_res_672x420.png")
     _save(render_state(state, 0, "perspective", width=1600, height=1000),
           "08_high_res_1600x1000.png")

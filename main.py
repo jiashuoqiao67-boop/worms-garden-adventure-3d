@@ -40,9 +40,9 @@ WINDOW_W, WINDOW_H = 1280, 800
 
 # Internal render-resolution presets (handbook 14.5); target internal height.
 QUALITY_PRESETS = {
-    1: ("FAST", 420),
-    2: ("BALANCED", 700),
-    3: ("HIGH", 1000),
+    1: ("FAST", 560),
+    2: ("BALANCED", 800),
+    3: ("HIGH", 1200),
     4: ("NATIVE", None),
 }
 
@@ -128,9 +128,9 @@ def main():
     view_mode = 0
     projection = "perspective"
     worm_yaw = 0.0
-    quality = 1
+    quality = 2
     fog_enabled = False
-    bilinear = False
+    bilinear = True
     spark_timer = 0.0
     start_time = time.time()
     render_ms = 0.0
