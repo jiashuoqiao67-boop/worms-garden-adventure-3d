@@ -2,7 +2,7 @@ Performance benchmark (offscreen, perspective, overview view)
 frames/preset = 5
 
 PRESET     RESOLUTION     TRIS   MEAN ms  MEDIAN ms     FPS
-FAST       672x420        6248    113.73     113.77     8.8
-BALANCED   1120x700       6248    116.13     113.91     8.8
-HIGH       1600x1000      6248    151.41     148.17     6.7
-NATIVE     1280x800       6248    120.15     119.65     8.4
+FAST       672x420        8044    144.18     142.95     7.0
+BALANCED   1120x700       8044     165.7     167.97     6.0
+HIGH       1600x1000      8044    182.47     170.35     5.9
+NATIVE     1280x800       8044    153.18     153.99     6.5

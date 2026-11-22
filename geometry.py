@@ -189,31 +189,87 @@ def disc_mesh(radius=0.26, center=(0.0, 0.0, 0.0), segments=12) -> Mesh:
                 triangles=np.array(triangles, dtype=int))
 
 
-def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    """Worm: ellipsoid body with a round head (still a real 3D mesh)."""
+def _sph(center, scale, radius=1.0, rings=7, sectors=10) -> Mesh:
+    """Convenience ellipsoid at a centre with per-axis scale."""
+    return sphere_mesh(radius, center, rings=rings, sectors=sectors,
+                       scale=scale)
+
+
+def worm_parts(center=(0.0, 0.0, 0.0)):
+    """Caterpillar: tapered segment chain + round head, split into a body
+    part and an eye part. Returns [(mesh, role), ...] (head faces +Z)."""
     cx, cy, cz = center
-    body = sphere_mesh(1.0, (cx, cy, cz),
-                        scale=(0.15, 0.15, 0.28))
-    head = sphere_mesh(0.15, (cx, cy + 0.02, cz + 0.24))
-    return _merge_meshes([body, head])
+    body = []
+    seg_z = [-0.21, -0.12, -0.03, 0.06]
+    for i, z in enumerate(seg_z):
+        r = 0.105 + 0.02 * (i / 3.0)
+        body.append(_sph((cx, cy, cz + z), (r, r, 0.075),
+                         rings=5, sectors=8))
+    body.append(_sph((cx, cy + 0.01, cz + 0.21),
+                      (0.14, 0.135, 0.125), rings=6, sectors=10))
+    # Eyes sit proud of the front/top of the head, not buried inside it.
+    eyes = [
+        _sph((cx - 0.06, cy + 0.075, cz + 0.305),
+             (0.026, 0.026, 0.026), rings=4, sectors=6),
+        _sph((cx + 0.06, cy + 0.075, cz + 0.305),
+             (0.026, 0.026, 0.026), rings=4, sectors=6),
+    ]
+    return [(_merge_meshes(body), "worm"),
+            (_merge_meshes(eyes), "eye")]
+
+
+def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
+    return _merge_meshes([m for m, _ in worm_parts(center)])
+
+
+def apple_parts(center=(0.0, 0.0, 0.0)):
+    """Apple: flattened fruit, short stem and one leaf."""
+    cx, cy, cz = center
+    fruit = [_sph((cx, cy, cz), (0.15, 0.135, 0.15), rings=6, sectors=10)]
+    stem = [cube_mesh((0.024, 0.10, 0.024), (cx, cy + 0.17, cz))]
+    leaf = [_sph((cx + 0.06, cy + 0.19, cz),
+                 (0.06, 0.014, 0.032), rings=4, sectors=6)]
+    return [(_merge_meshes(fruit), "fruit"),
+            (_merge_meshes(stem), "stem"),
+            (_merge_meshes(leaf), "leaf")]
 
 
 def apple_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    """Apple: round fruit plus a short stem on top."""
+    return _merge_meshes([m for m, _ in apple_parts(center)])
+
+
+def bird_parts(center=(0.0, 0.0, 0.0)):
+    """Bird: body, head, folded wings and tail, plus a beak and eyes."""
     cx, cy, cz = center
-    fruit = sphere_mesh(0.14, (cx, cy, cz))
-    stem = cube_mesh((0.025, 0.09, 0.025), (cx, cy + 0.17, cz))
-    return _merge_meshes([fruit, stem])
+    body = [
+        _sph((cx, cy, cz), (0.15, 0.11, 0.19), rings=5, sectors=8),
+        _sph((cx, cy + 0.05, cz + 0.17),
+             (0.09, 0.085, 0.09), rings=5, sectors=8),
+        _sph((cx - 0.14, cy + 0.02, cz - 0.04),
+             (0.11, 0.016, 0.10), rings=4, sectors=6),
+        _sph((cx + 0.14, cy + 0.02, cz - 0.04),
+             (0.11, 0.016, 0.10), rings=4, sectors=6),
+        _sph((cx, cy + 0.02, cz - 0.21),
+             (0.05, 0.02, 0.085), rings=4, sectors=6),
+    ]
+    belly = [_sph((cx, cy - 0.02, cz + 0.05),
+                  (0.11, 0.08, 0.13), rings=4, sectors=6)]
+    beak = [cube_mesh((0.03, 0.028, 0.08),
+                      (cx, cy + 0.03, cz + 0.30))]
+    eyes = [
+        _sph((cx - 0.085, cy + 0.06, cz + 0.18),
+             (0.02, 0.02, 0.02), rings=4, sectors=6),
+        _sph((cx + 0.085, cy + 0.06, cz + 0.18),
+             (0.02, 0.02, 0.02), rings=4, sectors=6),
+    ]
+    return [(_merge_meshes(body), "bird"),
+            (_merge_meshes(belly), "belly"),
+            (_merge_meshes(beak), "beak"),
+            (_merge_meshes(eyes), "eye")]
 
 
 def bird_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    """Bird: ellipsoid body with two small wings."""
-    cx, cy, cz = center
-    body = sphere_mesh(1.0, (cx, cy, cz),
-                       scale=(0.17, 0.11, 0.15))
-    wing_l = cube_mesh((0.13, 0.02, 0.09), (cx - 0.20, cy + 0.02, cz))
-    wing_r = cube_mesh((0.13, 0.02, 0.09), (cx + 0.20, cy + 0.02, cz))
-    return _merge_meshes([body, wing_l, wing_r])
+    return _merge_meshes([m for m, _ in bird_parts(center)])
 
 
 def flag_mesh(base=(0.0, 0.0, 0.0), height=0.8) -> Mesh:

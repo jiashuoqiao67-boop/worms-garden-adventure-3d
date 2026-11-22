@@ -23,8 +23,8 @@ from PIL import Image
 from maze import COLS, ROWS, cell_center_3d, START_CELL, FINISH_CELL
 from game import build_level, apple_world_pos
 from geometry import (
-    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
-    bird_mesh, flag_mesh,
+    ground_mesh, cube_mesh, disc_mesh, worm_parts, apple_parts,
+    bird_parts, flag_mesh,
 )
 from materials import Material, make_grass_texture, make_stone_texture
 from renderer import Renderer
@@ -59,8 +59,13 @@ def _materials(filter_mode="nearest"):
         "flag": Material(base_color=(40, 220, 75)),
         "red": Material(base_color=(220, 35, 40)),
         "gold": Material(base_color=(255, 190, 20)),
-        "bird": Material(base_color=(15, 15, 22)),
+        "bird": Material(base_color=(55, 58, 72)),
+        "belly": Material(base_color=(205, 200, 188)),
         "worm": Material(base_color=(75, 195, 65)),
+        "stem": Material(base_color=(96, 60, 32)),
+        "beak": Material(base_color=(230, 150, 45)),
+        "leaf": Material(base_color=(58, 148, 58)),
+        "eye": Material(base_color=(12, 12, 14)),
     }
 
 
@@ -91,16 +96,20 @@ def render_state(state, view_mode=0, projection="perspective",
     for apple in state["apples"]:
         if apple["collected"]:
             continue
-        mat = mats["gold"] if apple["value"] == 100 else mats["red"]
-        renderer.draw_mesh(cam, apple_mesh(apple_world_pos(apple, t)),
-                           IDENTITY, mat)
+        fruit = mats["gold"] if apple["value"] == 100 else mats["red"]
+        role_mat = {"fruit": fruit, "stem": mats["stem"], "leaf": mats["leaf"]}
+        for mesh, role in apple_parts(apple_world_pos(apple, t)):
+            renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
 
+    bird_role_mat = {"bird": mats["bird"], "belly": mats["belly"],
+                     "beak": mats["beak"], "eye": mats["eye"]}
     for bird in state["birds"]:
-        renderer.draw_mesh(cam, bird_mesh(bird["pos"]),
-                            IDENTITY, mats["bird"])
+        for mesh, role in bird_parts(bird["pos"]):
+            renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
 
-    renderer.draw_mesh(cam, worm_mesh(state["position"]),
-                       IDENTITY, mats["worm"])
+    worm_role_mat = {"worm": mats["worm"], "eye": mats["eye"]}
+    for mesh, role in worm_parts(state["position"]):
+        renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
     return renderer
 
 

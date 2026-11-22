@@ -7,6 +7,7 @@ Follows handbook section 17.2 structure. Run from the project root:
 The report is written to report/Worms_Garden_Adventure_3D_Report.docx.
 """
 
+import json
 import os
 
 from docx import Document
@@ -40,14 +41,21 @@ def bullet(doc, text):
     doc.add_paragraph(text, style="List Bullet")
 
 
-def perf_table(doc):
-    rows = [
-        ("Preset", "Resolution", "Triangles", "Mean ms", "Median ms", "FPS"),
-        ("FAST", "672x420", "6248", "113.73", "113.77", "8.8"),
-        ("BALANCED", "1120x700", "6248", "116.13", "113.91", "8.8"),
-        ("HIGH", "1600x1000", "6248", "151.41", "148.17", "6.7"),
-        ("NATIVE", "1280x800", "6248", "120.15", "119.65", "8.4"),
-    ]
+def _benchmark_rows():
+    path = os.path.join(ROOT, "results", "benchmark.json")
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    rows = [("Preset", "Resolution", "Triangles", "Mean ms",
+             "Median ms", "FPS")]
+    for r in data:
+        rows.append((r["preset"], r["resolution"], str(r["triangles"]),
+                     f"{r['render_ms_mean']:.2f}",
+                     f"{r['render_ms_median']:.2f}",
+                     f"{r['frames_per_s']:.1f}"))
+    return rows
+
+
+def perf_table(doc, rows):
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
     for r, row in enumerate(rows):
@@ -287,14 +295,18 @@ def main():
     bullet(doc, "test_maze, test_transforms, test_geometry, test_camera, "
                 "test_renderer, test_maze_world, test_materials, test_physics, "
                 "test_game, test_particles, test_extensions, test_resize.")
+    bench_rows = _benchmark_rows()
+    tri_count = bench_rows[1][2]
+    fps_values = [float(r[5]) for r in bench_rows[1:]]
+    fps_range = f"{min(fps_values):.1f}-{max(fps_values):.1f}"
     doc.add_paragraph(
         "Performance was measured offscreen with benchmark.py at four internal "
         "resolution presets, perspective overview view, five frames per preset. "
-        "The scene contains 6248 triangles.")
-    perf_table(doc)
+        f"The scene contains {tri_count} triangles.")
+    perf_table(doc, bench_rows)
     doc.add_paragraph(
-        "The measured render time is roughly 0.11-0.15 seconds per frame "
-        "(6.7-8.8 fps), which is still below real-time. This is reported "
+        f"The measured render time is roughly 0.14-0.19 seconds per frame "
+        f"({fps_range} fps), which is still below real-time. This is reported "
         "honestly: the renderer is a pure CPU software rasterizer, and the "
         "dominant cost is the per-triangle Python and object work (transform, "
         "clip, normal, shade, mesh setup) rather than pixel fill. Resolution "
@@ -318,9 +330,11 @@ def main():
     add_image(doc, "07_low_res_672x420.png", 4.6, "Figure 10. Low internal resolution 672x420.")
     add_image(doc, "08_high_res_1600x1000.png", 4.6, "Figure 11. High internal resolution 1600x1000: finer wall edges.")
     doc.add_paragraph("Main limitations:")
-    bullet(doc, "Entities are coarse parametric solids (ellipsoids, spheres, "
-                "discs and a pennant flag) rather than cubes, but they remain "
-                "low-poly with flat facets and no detailed anatomy.")
+    bullet(doc, "Entities are assembled from parametric ellipsoids and boxes: "
+                "a segmented caterpillar with a round head and eyes, an apple "
+                "with stem and leaf, and a bird with body, head, wings, tail, "
+                "belly, beak and eyes. They remain low-poly with flat facets "
+                "and no detailed anatomy or smooth vertex normals.")
     bullet(doc, "No antialiasing; polygon edges can look jagged at high zoom.")
     bullet(doc, "The area outside the maze grid is the framebuffer clear colour "
                 "(black), with no surrounding sky or ground plane.")

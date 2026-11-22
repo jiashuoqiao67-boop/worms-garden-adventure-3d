@@ -20,8 +20,8 @@ import pygame
 from maze import COLS, ROWS, cell_center_3d, START_CELL, FINISH_CELL
 from game import build_level, apple_world_pos
 from geometry import (
-    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
-    bird_mesh, flag_mesh,
+    ground_mesh, cube_mesh, disc_mesh, worm_parts, apple_parts,
+    bird_parts, flag_mesh,
 )
 from materials import Material, make_grass_texture, make_stone_texture
 from renderer import Renderer
@@ -37,6 +37,11 @@ FRAMES_PER_PRESET = 5
 def render_once(state, wall_meshes, ground, cam, mats, t, static=None):
     renderer = Renderer(cam.width, cam.height)
     grass_mat, stone_mat, water_mat, flag_mat, red_mat, gold_mat, bird_mat, worm_mat = mats
+    stem_mat = Material(base_color=(96, 60, 32))
+    beak_mat = Material(base_color=(230, 150, 45))
+    leaf_mat = Material(base_color=(58, 148, 58))
+    eye_mat = Material(base_color=(12, 12, 14))
+    belly_mat = Material(base_color=(205, 200, 188))
 
     renderer.draw_mesh(cam, ground, IDENTITY, grass_mat)
     for wall in wall_meshes:
@@ -62,19 +67,23 @@ def render_once(state, wall_meshes, ground, cam, mats, t, static=None):
     for apple in state["apples"]:
         if apple["collected"]:
             continue
-        mat = gold_mat if apple["value"] == 100 else red_mat
-        mesh = apple_mesh(apple_world_pos(apple, t))
-        tri_total += len(mesh.triangles)
-        renderer.draw_mesh(cam, mesh, IDENTITY, mat)
+        fruit_mat = gold_mat if apple["value"] == 100 else red_mat
+        role_mat = {"fruit": fruit_mat, "stem": stem_mat, "leaf": leaf_mat}
+        for mesh, role in apple_parts(apple_world_pos(apple, t)):
+            tri_total += len(mesh.triangles)
+            renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
 
+    bird_role_mat = {"bird": bird_mat, "belly": belly_mat,
+                     "beak": beak_mat, "eye": eye_mat}
     for bird in state["birds"]:
-        mesh = bird_mesh(bird["pos"])
-        tri_total += len(mesh.triangles)
-        renderer.draw_mesh(cam, mesh, IDENTITY, bird_mat)
+        for mesh, role in bird_parts(bird["pos"]):
+            tri_total += len(mesh.triangles)
+            renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
 
-    worm_body = worm_mesh(state["position"])
-    tri_total += len(worm_body.triangles)
-    renderer.draw_mesh(cam, worm_body, IDENTITY, worm_mat)
+    worm_role_mat = {"worm": worm_mat, "eye": eye_mat}
+    for mesh, role in worm_parts(state["position"]):
+        tri_total += len(mesh.triangles)
+        renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
 
     return tri_total
 
@@ -90,7 +99,7 @@ def main():
         Material(base_color=(40, 220, 75)),
         Material(base_color=(220, 35, 40)),
         Material(base_color=(255, 190, 20)),
-        Material(base_color=(15, 15, 22)),
+        Material(base_color=(55, 58, 72)),
         Material(base_color=(75, 195, 65)),
     )
 

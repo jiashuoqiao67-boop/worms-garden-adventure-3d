@@ -22,8 +22,8 @@ from game import (
     check_finish, reset_player, complete_level, restart_run, APPLE_COUNT,
 )
 from geometry import (
-    ground_mesh, cube_mesh, disc_mesh, worm_mesh, apple_mesh,
-    bird_mesh, flag_mesh,
+    ground_mesh, cube_mesh, disc_mesh, worm_parts, apple_parts,
+    bird_parts, flag_mesh,
 )
 from camera import Camera
 from renderer import Renderer
@@ -108,9 +108,14 @@ def main():
     worm_mat = Material(base_color=(75, 195, 65))
     red_mat = Material(base_color=(220, 35, 40))
     gold_mat = Material(base_color=(255, 190, 20))
-    bird_mat = Material(base_color=(15, 15, 22))
+    bird_mat = Material(base_color=(55, 58, 72))
+    belly_mat = Material(base_color=(205, 200, 188))
     water_mat = Material(base_color=(10, 90, 155))
     flag_mat = Material(base_color=(40, 220, 75))
+    stem_mat = Material(base_color=(96, 60, 32))
+    beak_mat = Material(base_color=(230, 150, 45))
+    leaf_mat = Material(base_color=(58, 148, 58))
+    eye_mat = Material(base_color=(12, 12, 14))
 
     state = build_level(1, seed=12)
     wall_meshes = build_wall_meshes(state)
@@ -259,21 +264,25 @@ def main():
         for apple in state["apples"]:
             if apple["collected"]:
                 continue
-            mat = gold_mat if apple["value"] == 100 else red_mat
-            mesh = apple_mesh(apple_world_pos(apple, t))
-            tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, IDENTITY, mat)
+            fruit_mat = gold_mat if apple["value"] == 100 else red_mat
+            role_mat = {"fruit": fruit_mat, "stem": stem_mat, "leaf": leaf_mat}
+            for mesh, role in apple_parts(apple_world_pos(apple, t)):
+                tri_total += len(mesh.triangles)
+                renderer.draw_mesh(cam, mesh, IDENTITY, role_mat[role])
 
         # Birds
+        bird_role_mat = {"bird": bird_mat, "belly": belly_mat,
+                         "beak": beak_mat, "eye": eye_mat}
         for bird in state["birds"]:
-            mesh = bird_mesh(bird["pos"])
-            tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, IDENTITY, bird_mat)
+            for mesh, role in bird_parts(bird["pos"]):
+                tri_total += len(mesh.triangles)
+                renderer.draw_mesh(cam, mesh, IDENTITY, bird_role_mat[role])
 
         # Worm
-        worm_body = worm_mesh(state["position"])
-        tri_total += len(worm_body.triangles)
-        renderer.draw_mesh(cam, worm_body, IDENTITY, worm_mat)
+        worm_role_mat = {"worm": worm_mat, "eye": eye_mat}
+        for mesh, role in worm_parts(state["position"]):
+            tri_total += len(mesh.triangles)
+            renderer.draw_mesh(cam, mesh, IDENTITY, worm_role_mat[role])
 
         # Project particles; draw them after the framebuffer is blitted.
         particle_dots = []
