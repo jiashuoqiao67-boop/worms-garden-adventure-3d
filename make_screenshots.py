@@ -50,10 +50,10 @@ def _save(renderer, name):
 def _materials(filter_mode="nearest"):
     return {
         "grass": Material(base_color=(54, 118, 70),
-                          texture=make_grass_texture(64),
+                          texture=make_grass_texture(128),
                           filter_mode=filter_mode),
         "stone": Material(base_color=(150, 144, 134),
-                          texture=make_stone_texture(64),
+                          texture=make_stone_texture(128),
                           filter_mode=filter_mode),
         "walltop": Material(base_color=(92, 152, 80)),
         "water": Material(base_color=(24, 134, 192)),
@@ -164,7 +164,7 @@ def wireframe_cube():
 def texture_zoom_comparison():
     """2D image-processing comparison: magnify the grass texture with
     nearest neighbour (hard blocks) vs bilinear filtering (smooth)."""
-    grass = Image.fromarray(make_grass_texture(64))
+    grass = Image.fromarray(make_grass_texture(128))
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
     grass.resize((256, 256), Image.NEAREST).save(
         os.path.join(SCREENSHOT_DIR, "13_tex_nearest_zoom.png"))

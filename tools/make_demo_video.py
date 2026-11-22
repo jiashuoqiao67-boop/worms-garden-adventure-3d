@@ -46,9 +46,9 @@ FPS = 4.5
 def materials(filter_mode="nearest"):
     return {
         "grass": Material(base_color=(54, 118, 70),
-                          texture=make_grass_texture(64), filter_mode=filter_mode),
+                          texture=make_grass_texture(128), filter_mode=filter_mode),
         "stone": Material(base_color=(150, 144, 134),
-                          texture=make_stone_texture(64), filter_mode=filter_mode),
+                          texture=make_stone_texture(128), filter_mode=filter_mode),
         "walltop": Material(base_color=(92, 152, 80)),
         "water": Material(base_color=(24, 134, 192)),
         "flag": Material(base_color=(46, 226, 122)),

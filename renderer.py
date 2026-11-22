@@ -12,11 +12,7 @@ sampling with perspective-correct UV interpolation.
 import numpy as np
 
 from transforms import transform_point, normalized
-from camera import (
-    clip_triangle_near,
-    perspective_project,
-    orthographic_project,
-)
+from camera import clip_triangle_near
 from materials import (
     face_normal, shade, sample_nearest, sample_bilinear, AMBIENT, DIFFUSE,
 )
@@ -57,6 +53,10 @@ class Renderer:
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
         self.fog = fog
+        # Back-face culling in camera space: skip triangles whose face normal
+        # points away from the camera (+Z is forward here). Flat horizontal
+        # faces whose normal is nearly parallel to the image plane are kept.
+        self.backface_cull = True
         # Cache for the identity-model-matrix check (see draw_mesh).
         self._last_model = None
         self._last_is_identity = False
@@ -66,11 +66,7 @@ class Renderer:
         self.depthbuf.fill(np.inf)
 
     def _project(self, camera, cam_point):
-        if camera.projection == "orthographic":
-            return orthographic_project(cam_point, camera.width, camera.height,
-                                        camera.pixels_per_unit, camera.near)
-        return perspective_project(cam_point, camera.width, camera.height,
-                                  camera.fov_y, camera.near)
+        return camera.project_cam(cam_point)
 
     def rasterize_triangle(self, screen, depths, rgb, texture=None,
                            uvs=None, intensity=1.0, filter_mode="nearest"):
@@ -200,6 +196,15 @@ class Renderer:
                 world_pts = [transform_point(model_matrix, mesh.vertices[i])
                              for i in tri]
             cam_pts = [camera.to_camera_space(p) for p in world_pts]
+
+            # Back-face culling (camera space, +Z forward): a face pointing
+            # away from the viewer has a positive camera-space normal Z.
+            if self.backface_cull:
+                ca, cb, cc = cam_pts
+                cux = cb[0] - ca[0]; cuy = cb[1] - ca[1]; cuz = cb[2] - ca[2]
+                cvx = cc[0] - ca[0]; cvy = cc[1] - ca[1]; cvz = cc[2] - ca[2]
+                if cux * cvy - cuy * cvx > 1e-6:
+                    continue
 
             poly = clip_triangle_near(cam_pts, camera.near)
             if poly is None:

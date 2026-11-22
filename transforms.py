@@ -80,15 +80,27 @@ def model_matrix(scale_vec, rot_y_angle, translation_vec):
 # ---------------------------------------------------------------------------
 
 def transform_point(M, xyz):
-    """Transform a position (homogeneous weight w = 1)."""
-    v = np.append(np.asarray(xyz, dtype=float), 1.0)
-    return (M @ v)[:3]
+    """Transform a position (homogeneous weight w = 1).
+
+    Hand-scalar 4x4 multiply to avoid per-vertex NumPy array allocation on
+    the hot rasterization path (handbook 5.1).
+    """
+    x = float(xyz[0]); y = float(xyz[1]); z = float(xyz[2])
+    return (
+        M[0, 0] * x + M[0, 1] * y + M[0, 2] * z + M[0, 3],
+        M[1, 0] * x + M[1, 1] * y + M[1, 2] * z + M[1, 3],
+        M[2, 0] * x + M[2, 1] * y + M[2, 2] * z + M[2, 3],
+    )
 
 
 def transform_direction(M, xyz):
     """Transform a direction (w = 0); translation has no effect."""
-    v = np.append(np.asarray(xyz, dtype=float), 0.0)
-    return (M @ v)[:3]
+    x = float(xyz[0]); y = float(xyz[1]); z = float(xyz[2])
+    return (
+        M[0, 0] * x + M[0, 1] * y + M[0, 2] * z,
+        M[1, 0] * x + M[1, 1] * y + M[1, 2] * z,
+        M[2, 0] * x + M[2, 1] * y + M[2, 2] * z,
+    )
 
 
 def transform_normal(M, xyz):

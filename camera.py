@@ -26,9 +26,17 @@ class Camera:
         self.width = width
         self.height = height
         self.pixels_per_unit = pixels_per_unit
+        # Perspective focal length is constant for the camera; cache it so the
+        # per-vertex projection does not recompute tan(fov/2) every point.
+        self._focal = (height / 2.0) / math.tan(math.radians(fov_y) / 2.0)
         # Cache the camera basis once per instance; the per-vertex transform
         # below must not recompute the cross products / normalization every time.
-        self._forward, self._right, self._up = self.basis()
+        f, r, u = self.basis()
+        # Store plain Python tuples so the per-vertex camera-space dot products
+        # do not pay NumPy scalar indexing overhead.
+        self._forward = (float(f[0]), float(f[1]), float(f[2]))
+        self._right = (float(r[0]), float(r[1]), float(r[2]))
+        self._up = (float(u[0]), float(u[1]), float(u[2]))
 
     def basis(self):
         """Return forward, right, up unit vectors (handbook 7.2)."""
@@ -53,12 +61,20 @@ class Camera:
 
     def project(self, point):
         """Project a world point to screen pixels; None if behind the near plane."""
-        c = self.to_camera_space(point)
+        return self.project_cam(self.to_camera_space(point))
+
+    def project_cam(self, c):
+        """Project an already camera-space point using cached camera constants."""
+        x, y, depth = c
+        if depth <= self.near:
+            return None
         if self.projection == "orthographic":
-            return orthographic_project(c, self.width, self.height,
-                                        self.pixels_per_unit, self.near)
-        return perspective_project(c, self.width, self.height,
-                                   self.fov_y, self.near)
+            sx = self.width / 2.0 + self.pixels_per_unit * x
+            sy = self.height / 2.0 - self.pixels_per_unit * y
+        else:
+            sx = self.width / 2.0 + self._focal * x / depth
+            sy = self.height / 2.0 - self._focal * y / depth
+        return (sx, sy)
 
     def toggle_projection(self):
         self.projection = ("orthographic"

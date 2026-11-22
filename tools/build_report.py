@@ -204,7 +204,7 @@ def main():
         "ambient ka = 0.25 and diffuse kd = 0.75; L points from the surface "
         "toward the light. The factor is applied to each RGB channel.")
     doc.add_paragraph(
-        "Two procedural textures are generated at runtime with Pillow: a grass "
+        "Two 128x128 procedural textures are generated at runtime with Pillow: a grass "
         "texture with short blade strokes and a stone texture with rectangular "
         "tones. UVs are attached to the ground and wall vertices; the default "
         "sampler is nearest-neighbour lookup with horizontal/vertical wrap. UVs "
@@ -322,7 +322,12 @@ def main():
         "between frames, replacing per-triangle NumPy vector allocations with "
         "scalar dot/cross/normal math, and scalarising the camera transform, "
         "projection, near-plane clip and per-channel shade so they no longer "
-        "allocate small arrays. Static placements (water-hole discs, flags) are "
+        "allocate small arrays. The model transform is a hand-scalar 4x4 "
+        "multiply returning a plain tuple, the perspective focal length is "
+        "cached per camera instead of recomputed with tan(fov/2) per vertex, "
+        "and back-face culling in camera space skips triangles whose face "
+        "normal points away from the viewer (near-horizontal faces are kept). "
+        "Static placements (water-hole discs, flags) are "
         "built once per level rather than every frame, and the near-plane clip "
         "has a fast path for triangles fully in front of the camera. As the "
         "optional CPU optimization noted in handbook p.30, the per-fragment "
@@ -340,8 +345,8 @@ def main():
                 "belly, beak and eyes. They remain low-poly with flat facets "
                 "and no detailed anatomy or smooth vertex normals.")
     bullet(doc, "No antialiasing; polygon edges can look jagged at high zoom.")
-    bullet(doc, "The area outside the maze grid is the framebuffer clear colour "
-                "(black), with no surrounding sky or ground plane.")
+    bullet(doc, "The area outside the maze grid is a flat clear-sky backdrop "
+                "colour, with no surrounding sky dome or ground plane.")
     bullet(doc, "Flat shading only; there are no specular highlights, smooth "
                 "vertex normals or cast shadows.")
     bullet(doc, "No mipmaps; distant textures may alias, and the software "

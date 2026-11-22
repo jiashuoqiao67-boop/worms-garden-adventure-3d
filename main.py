@@ -164,9 +164,9 @@ def main(max_frames=None):
     # Materials (palette matched to the garden-ruin reference: mossy green
     # wall tops over warm weathered stone, bright green worm, dark violet bird).
     grass_mat = Material(base_color=(54, 118, 70),
-                         texture=make_grass_texture(64))
+                         texture=make_grass_texture(128))
     stone_mat = Material(base_color=(150, 144, 134),
-                         texture=make_stone_texture(64))
+                         texture=make_stone_texture(128))
     walltop_mat = Material(base_color=(92, 152, 80))
     worm_mat = Material(base_color=(86, 206, 118))
     red_mat = Material(base_color=(212, 40, 52))
