@@ -39,17 +39,17 @@ class Camera:
 
     def to_camera_space(self, point):
         """Transform a world point into camera-space coordinates (scalar dot
-        products to avoid per-vertex NumPy array allocation)."""
+        products, returned as a tuple to avoid per-vertex array allocation)."""
         ex, ey, ez = self.eye
         dx = point[0] - ex
         dy = point[1] - ey
         dz = point[2] - ez
         f, r, u = self._forward, self._right, self._up
-        return np.array([
+        return (
             dx * r[0] + dy * r[1] + dz * r[2],
             dx * u[0] + dy * u[1] + dz * u[2],
             dx * f[0] + dy * f[1] + dz * f[2],
-        ])
+        )
 
     def project(self, point):
         """Project a world point to screen pixels; None if behind the near plane."""
@@ -74,7 +74,7 @@ def perspective_project(c, width=640, height=480, fov_y=70.0, near=0.1):
     focal = (height / 2.0) / math.tan(math.radians(fov_y) / 2.0)
     sx = width / 2.0 + focal * x / depth
     sy = height / 2.0 - focal * y / depth
-    return np.array([sx, sy])
+    return (sx, sy)
 
 
 def orthographic_project(c, width=640, height=480, pixels_per_unit=45.0,
@@ -85,7 +85,7 @@ def orthographic_project(c, width=640, height=480, pixels_per_unit=45.0,
         return None
     sx = width / 2.0 + pixels_per_unit * x
     sy = height / 2.0 - pixels_per_unit * y
-    return np.array([sx, sy])
+    return (sx, sy)
 
 
 def clip_triangle_near(triangle, near=0.1):
@@ -94,16 +94,25 @@ def clip_triangle_near(triangle, near=0.1):
     Returns a list of 3 or 4 visible vertices, or None if the whole triangle
     is behind the plane. The resulting polygon is triangulated as a fan later.
     """
-    pts = [np.asarray(v, dtype=float) for v in triangle]
+    pts = [(v[0], v[1], v[2]) for v in triangle]
+    # Fast path: the whole triangle is in front of the near plane.
+    if all(v[2] >= near for v in pts):
+        return pts
     visible = []
 
-    for start, end in zip(pts, pts[1:] + pts[:1]):
+    for i in range(len(pts)):
+        start = pts[i]
+        end = pts[(i + 1) % len(pts)]
         a_visible = start[2] >= near
         b_visible = end[2] >= near
 
         if a_visible != b_visible:
             t = (near - start[2]) / (end[2] - start[2])
-            intersection = start + t * (end - start)
+            intersection = (
+                start[0] + t * (end[0] - start[0]),
+                start[1] + t * (end[1] - start[1]),
+                near,
+            )
             visible.append(intersection)
         if b_visible:
             visible.append(end)

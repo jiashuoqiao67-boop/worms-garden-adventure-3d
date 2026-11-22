@@ -76,6 +76,16 @@ def build_wall_meshes(state):
     return [cube_mesh(size, center) for center, size in state["wall_boxes"]]
 
 
+def build_static_meshes(state):
+    """Static placements that do not move during a run: water-hole discs and
+    the two flags. Built once per level instead of every frame."""
+    pads = [disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.03, hole[1]))
+            for hole in state["water_holes"]]
+    start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
+    finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
+    return pads, start_flag, finish_flag
+
+
 def main():
     pygame.init()
     window_w, window_h = WINDOW_W, WINDOW_H
@@ -99,6 +109,7 @@ def main():
 
     state = build_level(1, seed=12)
     wall_meshes = build_wall_meshes(state)
+    water_pads, start_flag, finish_flag = build_static_meshes(state)
     ground = ground_mesh(COLS, ROWS)
     jump = JumpState()
     particles = []
@@ -143,6 +154,7 @@ def main():
                 elif event.key == pygame.K_r:
                     state = restart_run(state)
                     wall_meshes = build_wall_meshes(state)
+                    water_pads, start_flag, finish_flag = build_static_meshes(state)
                     jump = JumpState()
                     particles.clear()
                     start_time = time.time()
@@ -206,6 +218,7 @@ def main():
         if check_finish(state):
             state = complete_level(state)
             wall_meshes = build_wall_meshes(state)
+            water_pads, start_flag, finish_flag = build_static_meshes(state)
             jump = JumpState()
             particles.clear()
 
@@ -227,15 +240,11 @@ def main():
         for wall in wall_meshes:
             renderer.draw_mesh(cam, wall, IDENTITY, stone_mat)
 
-        # Water holes (flat blue discs on the ground)
-        for hole in state["water_holes"]:
-            pad = disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.03, hole[1]))
+        # Water holes (flat blue discs on the ground) and flags: cached once.
+        for pad in water_pads:
             tri_total += len(pad.triangles)
             renderer.draw_mesh(cam, pad, IDENTITY, water_mat)
 
-        # Start / finish flags (pole + triangular pennant)
-        start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
-        finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
         tri_total += len(start_flag.triangles) + len(finish_flag.triangles)
         renderer.draw_mesh(cam, start_flag, IDENTITY, flag_mat)
         renderer.draw_mesh(cam, finish_flag, IDENTITY, red_mat)

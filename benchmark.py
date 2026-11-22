@@ -34,7 +34,7 @@ from main import (
 FRAMES_PER_PRESET = 5
 
 
-def render_once(state, wall_meshes, ground, cam, mats, t):
+def render_once(state, wall_meshes, ground, cam, mats, t, static=None):
     renderer = Renderer(cam.width, cam.height)
     grass_mat, stone_mat, water_mat, flag_mat, red_mat, gold_mat, bird_mat, worm_mat = mats
 
@@ -44,13 +44,17 @@ def render_once(state, wall_meshes, ground, cam, mats, t):
 
     tri_total = len(ground.triangles) + sum(len(w.triangles) for w in wall_meshes)
 
-    for hole in state["water_holes"]:
-        pad = disc_mesh(0.26, (hole[0], 0.03, hole[1]))
+    if static is None:
+        pads = [disc_mesh(0.26, (hole[0], 0.03, hole[1]))
+                for hole in state["water_holes"]]
+        start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
+        finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
+    else:
+        pads, start_flag, finish_flag = static
+    for pad in pads:
         tri_total += len(pad.triangles)
         renderer.draw_mesh(cam, pad, IDENTITY, water_mat)
 
-    start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
-    finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
     tri_total += len(start_flag.triangles) + len(finish_flag.triangles)
     renderer.draw_mesh(cam, start_flag, IDENTITY, flag_mat)
     renderer.draw_mesh(cam, finish_flag, IDENTITY, red_mat)
@@ -93,6 +97,11 @@ def main():
     state = build_level(1, seed=12)
     wall_meshes = build_wall_meshes(state)
     ground = ground_mesh(COLS, ROWS)
+    pads = [disc_mesh(0.26, (hole[0], 0.03, hole[1]))
+            for hole in state["water_holes"]]
+    start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
+    finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
+    static = (pads, start_flag, finish_flag)
     t = 1.0
 
     results = []
@@ -102,13 +111,13 @@ def main():
         cam = make_camera(0, state["position"], "perspective", buf_w, buf_h)
 
         # warm up
-        render_once(state, wall_meshes, ground, cam, mats, t)
+        render_once(state, wall_meshes, ground, cam, mats, t, static)
 
         times = []
         tris = 0
         for _ in range(FRAMES_PER_PRESET):
             t0 = time.perf_counter()
-            tris = render_once(state, wall_meshes, ground, cam, mats, t)
+            tris = render_once(state, wall_meshes, ground, cam, mats, t, static)
             times.append((time.perf_counter() - t0) * 1000.0)
 
         results.append({

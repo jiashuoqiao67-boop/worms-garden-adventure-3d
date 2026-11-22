@@ -55,6 +55,9 @@ class Renderer:
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
         self.fog = fog
+        # Cache for the identity-model-matrix check (see draw_mesh).
+        self._last_model = None
+        self._last_is_identity = False
 
     def clear(self):
         self.colorbuf.fill(0)
@@ -87,7 +90,7 @@ class Renderer:
             sx = np.asarray([a[0], b[0], c[0]], dtype=float)
             sy = np.asarray([a[1], b[1], c[1]], dtype=float)
             sz = np.asarray([za, zb, zc], dtype=float)
-            base = np.clip(np.asarray(rgb, dtype=float), 0, 255)
+            base = np.asarray(rgb, dtype=float)
             use_tex = texture is not None and uvs is not None
             tex = texture if use_tex else np.empty((0, 0, 3), dtype=np.uint8)
             uv = np.asarray(uvs, dtype=float) if use_tex else np.empty((0, 2))
@@ -111,7 +114,7 @@ class Renderer:
         if x1 < x0 or y1 < y0:
             return
 
-        rgb = np.clip(np.asarray(rgb, dtype=float), 0, 255)
+        rgb = np.asarray(rgb, dtype=float)
 
         xs = np.arange(x0, x1 + 1, dtype=float) + 0.5
         ys = np.arange(y0, y1 + 1, dtype=float) + 0.5
@@ -178,8 +181,15 @@ class Renderer:
         """Transform, light, project and rasterize every triangle of a mesh."""
         light = _LIGHT_NORM if light_dir is DEFAULT_LIGHT_DIR else normalized(light_dir)
         # Most meshes already hold world-space vertices under an identity
-        # model matrix; skip the 4x4 multiply in that common case.
-        is_identity = np.allclose(model_matrix, np.eye(4))
+        # model matrix; skip the 4x4 multiply in that common case. Cache the
+        # identity check by matrix object identity (the shared IDENTITY matrix
+        # is passed for every static mesh).
+        if self._last_model is model_matrix:
+            is_identity = self._last_is_identity
+        else:
+            is_identity = np.allclose(model_matrix, np.eye(4))
+            self._last_model = model_matrix
+            self._last_is_identity = is_identity
 
         for tri in mesh.triangles:
             if is_identity:
@@ -197,8 +207,9 @@ class Renderer:
             normal = face_normal(world_pts[0], world_pts[1], world_pts[2])
             nd = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2]
             intensity = AMBIENT + DIFFUSE * (nd if nd > 0.0 else 0.0)
-            shaded = shade(material.base_color, normal, light,
-                           intensity=intensity)
+            bc = material.base_color
+            shaded = [min(255.0, max(0.0, float(bc[i]) * intensity))
+                      for i in range(3)]
 
             textured = (material.texture is not None
                         and mesh.uvs is not None and len(poly) == 3)

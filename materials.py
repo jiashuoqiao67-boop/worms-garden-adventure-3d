@@ -121,8 +121,8 @@ def face_normal(a, b, c):
     nz = ux * vy - uy * vx
     length = math.sqrt(nx * nx + ny * ny + nz * nz)
     if length < 1e-10:
-        return np.array([0.0, 1.0, 0.0])
-    return np.array([nx / length, ny / length, nz / length])
+        return (0.0, 1.0, 0.0)
+    return (nx / length, ny / length, nz / length)
 
 
 def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE,
@@ -134,5 +134,5 @@ def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE,
     """
     if intensity is None:
         intensity = ambient + diffuse * max(0.0, dot(normal, light_dir))
-    return np.clip(np.asarray(base_rgb, dtype=float) * intensity,
-                   0, 255).astype(np.uint8)
+    return [min(255.0, max(0.0, float(base_rgb[i]) * intensity))
+            for i in range(3)]
