@@ -43,10 +43,10 @@ def bullet(doc, text):
 def perf_table(doc):
     rows = [
         ("Preset", "Resolution", "Triangles", "Mean ms", "Median ms", "FPS"),
-        ("FAST", "672x420", "5286", "1383.25", "1375.64", "0.7"),
-        ("BALANCED", "1120x700", "5286", "1458.23", "1453.87", "0.7"),
-        ("HIGH", "1600x1000", "5286", "1562.25", "1562.12", "0.6"),
-        ("NATIVE", "1280x800", "5286", "1488.95", "1481.35", "0.7"),
+        ("FAST", "672x420", "5286", "767.40", "765.98", "1.3"),
+        ("BALANCED", "1120x700", "5286", "828.65", "805.93", "1.2"),
+        ("HIGH", "1600x1000", "5286", "952.67", "929.62", "1.1"),
+        ("NATIVE", "1280x800", "5286", "858.89", "834.27", "1.2"),
     ]
     table = doc.add_table(rows=len(rows), cols=len(rows[0]))
     table.style = "Light Grid Accent 1"
@@ -291,13 +291,16 @@ def main():
         "The scene contains 5286 triangles.")
     perf_table(doc)
     doc.add_paragraph(
-        "The measured render time is roughly 1.4-1.6 seconds per frame, which "
-        "is well below real-time. This is reported honestly: the renderer is a "
+        "The measured render time is roughly 0.77-0.95 seconds per frame, which "
+        "is below real-time. This is reported honestly: the renderer is a "
         "pure Python/NumPy software rasterizer, and the dominant cost is the "
         "per-triangle Python and NumPy object work (transform, clip, normal, "
-        "shade, mesh setup) rather than pixel fill. Resolution has only a small "
-        "effect (about 13% from FAST to HIGH), which supports that diagnosis; a "
-        "compiled JIT or a spatial/caching pass would be the next optimization.")
+        "shade, mesh setup) rather than pixel fill. Resolution has only a "
+        "moderate effect (about 24% from FAST to HIGH), which supports that "
+        "diagnosis. The hot path was optimized by caching the camera basis per "
+        "instance, skipping the identity-model 4x4 multiply, and removing "
+        "reduced per-triangle lighting normalization; a compiled JIT or a "
+        "spatial/caching pass would be the next optimization.")
     add_image(doc, "07_low_res_672x420.png", 4.6, "Figure 10. Low internal resolution 672x420.")
     add_image(doc, "08_high_res_1600x1000.png", 4.6, "Figure 11. High internal resolution 1600x1000: finer wall edges.")
     doc.add_paragraph("Main limitations:")

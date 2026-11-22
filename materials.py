@@ -112,10 +112,14 @@ def face_normal(a, b, c):
     return normalized(n)
 
 
-def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE):
-    """Ambient + Lambertian diffuse shading applied per RGB channel."""
-    n = normalized(normal)
-    light = normalized(light_dir)
-    intensity = ambient + diffuse * max(0.0, dot(n, light))
+def shade(base_rgb, normal, light_dir, ambient=AMBIENT, diffuse=DIFFUSE,
+          intensity=None):
+    """Ambient + Lambertian diffuse shading applied per RGB channel.
+
+    ``normal`` and ``light_dir`` are expected to be unit vectors; an optional
+    precomputed ``intensity`` avoids re-running the diffuse dot product.
+    """
+    if intensity is None:
+        intensity = ambient + diffuse * max(0.0, dot(normal, light_dir))
     return np.clip(np.asarray(base_rgb, dtype=float) * intensity,
                    0, 255).astype(np.uint8)

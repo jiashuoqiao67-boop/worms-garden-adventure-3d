@@ -26,6 +26,9 @@ class Camera:
         self.width = width
         self.height = height
         self.pixels_per_unit = pixels_per_unit
+        # Cache the camera basis once per instance; the per-vertex transform
+        # below must not recompute the cross products / normalization every time.
+        self._forward, self._right, self._up = self.basis()
 
     def basis(self):
         """Return forward, right, up unit vectors (handbook 7.2)."""
@@ -36,10 +39,9 @@ class Camera:
 
     def to_camera_space(self, point):
         """Transform a world point into camera-space coordinates."""
-        point = np.asarray(point, dtype=float)
-        forward, right, up = self.basis()
-        d = point - self.eye
-        return np.array([dot(d, right), dot(d, up), dot(d, forward)])
+        d = np.asarray(point, dtype=float) - self.eye
+        f, r, u = self._forward, self._right, self._up
+        return np.array([dot(d, r), dot(d, u), dot(d, f)])
 
     def project(self, point):
         """Project a world point to screen pixels; None if behind the near plane."""

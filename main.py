@@ -102,7 +102,7 @@ def main():
 
     view_mode = 0
     projection = "perspective"
-    quality = 2
+    quality = 1
     fog_enabled = False
     bilinear = False
     spark_timer = 0.0

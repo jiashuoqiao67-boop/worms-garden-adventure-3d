@@ -156,10 +156,16 @@ class Renderer:
                   light_dir=DEFAULT_LIGHT_DIR):
         """Transform, light, project and rasterize every triangle of a mesh."""
         light = normalized(light_dir)
+        # Most meshes already hold world-space vertices under an identity
+        # model matrix; skip the 4x4 multiply in that common case.
+        is_identity = np.allclose(model_matrix, np.eye(4))
 
         for tri in mesh.triangles:
-            world_pts = [transform_point(model_matrix, mesh.vertices[i])
-                         for i in tri]
+            if is_identity:
+                world_pts = [mesh.vertices[i] for i in tri]
+            else:
+                world_pts = [transform_point(model_matrix, mesh.vertices[i])
+                             for i in tri]
             cam_pts = [camera.to_camera_space(p) for p in world_pts]
 
             poly = clip_triangle_near(cam_pts, camera.near)
@@ -169,7 +175,8 @@ class Renderer:
             # Flat shading: one face normal and intensity per triangle.
             normal = face_normal(world_pts[0], world_pts[1], world_pts[2])
             intensity = AMBIENT + DIFFUSE * max(0.0, dot(normal, light))
-            shaded = shade(material.base_color, normal, light)
+            shaded = shade(material.base_color, normal, light,
+                           intensity=intensity)
 
             textured = (material.texture is not None
                         and mesh.uvs is not None and len(poly) == 3)
