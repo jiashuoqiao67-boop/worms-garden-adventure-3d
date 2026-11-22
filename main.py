@@ -41,9 +41,9 @@ WINDOW_W, WINDOW_H = 1280, 800
 
 # Internal render-resolution presets (handbook 14.5); target internal height.
 QUALITY_PRESETS = {
-    1: ("FAST", 560),
-    2: ("BALANCED", 800),
-    3: ("HIGH", 1200),
+    1: ("FAST", 512),
+    2: ("BALANCED", 640),
+    3: ("HIGH", 800),
     4: ("NATIVE", None),
 }
 
