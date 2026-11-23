@@ -50,7 +50,7 @@ QUALITY_PRESETS = {
 IDENTITY = model_matrix((1, 1, 1), 0.0, (0.0, 0.0, 0.0))
 
 # Part B extension 1: atmospheric depth fog configuration.
-FOG_CONFIG = {"color": np.array([182, 212, 226]), "near": 8.0, "far": 26.0}
+FOG_CONFIG = {"color": np.array([182, 212, 226]), "near": 5.0, "far": 20.0}
 # Three-stop clear-sky backdrop (top -> mid -> low), matching the reference
 # garden look. SKY_BG keeps the low stop as the plain-colour fallback.
 SKY_TOP = (26, 62, 112)
@@ -169,9 +169,9 @@ def main(max_frames=None):
     # Materials (palette matched to the garden-ruin reference: mossy green
     # wall tops over warm weathered stone, bright green worm, dark violet bird).
     grass_mat = Material(base_color=(54, 118, 70),
-                         texture=make_grass_texture(128))
+                         texture=make_grass_texture(64))
     stone_mat = Material(base_color=(172, 166, 154),
-                         texture=make_stone_texture(128))
+                         texture=make_stone_texture(64))
     walltop_mat = Material(base_color=(92, 152, 80))
     worm_mat = Material(base_color=(86, 206, 118))
     red_mat = Material(base_color=(212, 40, 52))

@@ -204,7 +204,7 @@ def main():
         "ambient ka = 0.25 and diffuse kd = 0.75; L points from the surface "
         "toward the light. The factor is applied to each RGB channel.")
     doc.add_paragraph(
-        "Two 128x128 procedural textures are generated at runtime with Pillow: a grass "
+        "Two 64x64 procedural textures are generated at runtime with Pillow: a grass "
         "texture with short blade strokes and a stone texture with rectangular "
         "tones. UVs are attached to the ground and wall vertices; the default "
         "sampler is nearest-neighbour lookup with horizontal/vertical wrap. UVs "
@@ -255,7 +255,7 @@ def main():
         "background to convey depth, using only per-fragment colour work? For a "
         "fragment at camera-space depth z, the fog factor is "
         "t = clamp((z - near)/(far - near), 0, 1), and the final colour is "
-        "C = C_frag*(1 - t) + C_fog*t. near = 8 and far = 26 world units cover "
+        "C = C_frag*(1 - t) + C_fog*t. near = 5 and far = 20 world units cover "
         "the maze diagonal. The fog is applied after lighting and texture "
         "sampling, before the depth-buffer write. Toggle with F.")
     add_image(doc, "09_fog_off.png", 5.0, "Figure 6. Fog off: full contrast across the maze.")
@@ -281,8 +281,8 @@ def main():
     doc.add_paragraph(
         "Evaluation: the 2D magnification comparison shows clear block edges "
         "with nearest sampling versus softened transitions with bilinear "
-        "filtering. In the 3D overview the difference is mild because the "
-        "procedural texture is already fine-grained; the close-up comparison "
+        "filtering. In the 3D overview the textures are viewed at a distance, "
+        "so the sampling difference is subtler; the close-up comparison "
         "isolates the sampling behaviour. Limitation: filtering is per "
         "fragment with no mipmaps, so distant textures can still alias.")
 

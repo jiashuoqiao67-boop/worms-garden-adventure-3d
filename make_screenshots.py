@@ -50,10 +50,10 @@ def _save(renderer, name):
 def _materials(filter_mode="nearest"):
     return {
         "grass": Material(base_color=(54, 118, 70),
-                          texture=make_grass_texture(128),
+                          texture=make_grass_texture(64),
                           filter_mode=filter_mode),
         "stone": Material(base_color=(172, 166, 154),
-                          texture=make_stone_texture(128),
+                          texture=make_stone_texture(64),
                           filter_mode=filter_mode),
         "walltop": Material(base_color=(92, 152, 80)),
         "water": Material(base_color=(24, 134, 192)),
