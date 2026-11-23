@@ -137,3 +137,8 @@ if HAS_NUMBA:
                 colorbuf[y, x, 0] = min(255, max(0, r))
                 colorbuf[y, x, 1] = min(255, max(0, g))
                 colorbuf[y, x, 2] = min(255, max(0, b))
+
+else:
+    # Numba absent: keep the name importable as None. renderer.py gates the
+    # JIT call on HAS_NUMBA and falls back to its pure Python/NumPy path.
+    rasterize_njit = None
