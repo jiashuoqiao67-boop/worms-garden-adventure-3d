@@ -159,6 +159,36 @@ def test_near_plane_crossing_is_safe():
         assert 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0
 
 
+def test_clipped_ground_triangle_is_still_drawn():
+    """Regression: a floor triangle crossing the near plane must cover pixels.
+
+    Clipping creates vertices exactly on the near plane; rejecting those in
+    the projection step dropped whole clipped triangles and left a
+    background-coloured hole in the ground while the worm moved.
+    """
+    from camera import Camera
+    from geometry import ground_mesh
+    from materials import Material
+    from transforms import model_matrix
+
+    cam = Camera(eye=(4.0, 1.0, 6.0), target=(4.0, 0.0, 0.0),
+                 width=200, height=140)
+    assert cam.project_cam((0.0, 0.0, cam.near)) is not None
+
+    r = Renderer(200, 140, background=(30, 90, 160))
+    r.clear()
+    floor = ground_mesh(12, 12, uv_per_unit=0.5)
+    r.draw_mesh(cam, floor, model_matrix((1, 1, 1), 0.0, (-2.0, 0.0, -2.0)),
+                Material(base_color=(200, 200, 200)))
+    assert r.stats["clipped"] > 0
+    buf = r.surface().astype(int)
+    sky = (np.abs(buf - np.array([30, 90, 160])).sum(axis=2) < 6)
+    # The floor is below the horizon: everything under the horizon line must be
+    # covered, with no background triangle-shaped holes.
+    lower = sky[int(140 * 0.62):, :]
+    assert lower.sum() == 0, f"{int(lower.sum())} background pixels below horizon"
+
+
 if __name__ == "__main__":
     test_clear()
     test_barycentric_inside_outside()
@@ -169,4 +199,5 @@ if __name__ == "__main__":
     test_depth_image_separates_near_and_far()
     test_wireframe_mode_draws_edges()
     test_near_plane_crossing_is_safe()
+    test_clipped_ground_triangle_is_still_drawn()
     print("M5 renderer tests OK")

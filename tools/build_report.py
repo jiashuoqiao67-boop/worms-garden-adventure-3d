@@ -253,11 +253,16 @@ def main():
         "discarded, so no giant inverted polygons can appear when the camera "
         "moves into a wall.")
     doc.add_paragraph(
-        "The near-plane path is exercised by a dedicated test and by "
-        "screenshot 19: a camera 0.55 units above the floor beside a corridor "
-        "wall takes the clipping path for over a hundred triangles and still "
-        "produces a clean frame (no smearing, no inverted polygons, no NaNs in "
-        "the depth buffer).")
+        "Screenshot 19 exercises this path: a camera 0.55 units above the floor "
+        "takes the clipping path for 108 triangles and still produces a clean "
+        "frame. Testing it exposed a bug worth recording: clipping creates "
+        "vertices exactly on the near plane, and the projection originally "
+        "rejected any depth <= near, so clipped triangles were discarded and "
+        "left background-coloured holes in the ground while the follow camera "
+        "moved (5 of 60 scripted frames). Accepting vertices on the plane, as "
+        "handbook 7.6 requires, fixed it; a regression test now renders a "
+        "floor that crosses the near plane and asserts that no background "
+        "pixels remain below the horizon.")
     code_block(doc,
                "invz = wa/za + wb/zb + wc/zc      # affine in screen space\n"
                "z    = 1.0 / invz                # perspective-correct depth\n"

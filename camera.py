@@ -64,9 +64,14 @@ class Camera:
         return self.project_cam(self.to_camera_space(point))
 
     def project_cam(self, c):
-        """Project an already camera-space point using cached camera constants."""
+        """Project an already camera-space point using cached camera constants.
+
+        A vertex that lies exactly on the near plane is still visible
+        (handbook 7.6): clipping produces such vertices, so rejecting them
+        here would silently drop every clipped triangle.
+        """
         x, y, depth = c
-        if depth <= self.near:
+        if depth < self.near - 1e-9:
             return None
         if self.projection == "orthographic":
             sx = self.width / 2.0 + self.pixels_per_unit * x
@@ -116,9 +121,12 @@ class Camera:
 
 
 def perspective_project(c, width=640, height=480, fov_y=70.0, near=0.1):
-    """Perspective projection; distant objects shrink with depth (7.3)."""
+    """Perspective projection; distant objects shrink with depth (7.3).
+
+    A point exactly on the near plane still projects (handbook 7.6).
+    """
     x, y, depth = c
-    if depth <= near:
+    if depth < near - 1e-9:
         return None
     focal = (height / 2.0) / math.tan(math.radians(fov_y) / 2.0)
     sx = width / 2.0 + focal * x / depth
@@ -130,7 +138,7 @@ def orthographic_project(c, width=640, height=480, pixels_per_unit=45.0,
                          near=0.1):
     """Orthographic projection; size is independent of depth (7.4)."""
     x, y, depth = c
-    if depth <= near:
+    if depth < near - 1e-9:
         return None
     sx = width / 2.0 + pixels_per_unit * x
     sy = height / 2.0 - pixels_per_unit * y
@@ -188,4 +196,5 @@ def clip_polygon_near(points, near=0.1, attributes=None):
     if len(out_pts) < 3:
         return None, None
     return out_pts, (out_attrs if attributes[0] else None)
+
 

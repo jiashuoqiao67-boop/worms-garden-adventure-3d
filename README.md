@@ -93,7 +93,7 @@ bottom-right corridor minimap (walls, apples, birds, worm, start, exit).
 | `benchmark.py` | Offscreen benchmark -> `results/benchmark.json` / `.txt` |
 | `make_screenshots.py` | Regenerates every captioned evidence image in `screenshots/` |
 | `tools/build_report.py` | Rebuilds `report/Worms_Garden_Adventure_3D_Report.docx` |
-| `tools/make_demo_video.py` | Renders `report/demo_video.mp4` (2:18, 1280x720, 24 fps) |
+| `tools/make_demo_video.py` | Renders `report/demo_video.mp4` (2:20, 1280x720, 24 fps) |
 | `tests/` | 12 self-contained numerical and gameplay checks |
 | `screenshots/` | Labelled evidence images (19 files) |
 | `results/` | Measured performance table |
@@ -177,7 +177,7 @@ Limitation: no mipmaps, so minified distant textures still alias.
 | Item | Location |
 |---|---|
 | Technical report, 10 pages (DOCX) | `report/Worms_Garden_Adventure_3D_Report.docx` |
-| Demo recording, 2:18, 1280x720, 24 fps | `report/demo_video.mp4` |
+| Demo recording, 2:20, 1280x720, 24 fps | `report/demo_video.mp4` |
 | Screenshots, 19 labelled images | `screenshots/` |
 | Performance table | `results/benchmark.txt`, `results/benchmark.json` |
 | Unit/integration tests | `tests/` |
@@ -199,4 +199,5 @@ resolution, 09/10 fog off/heavy, 11/12 nearest/bilinear, 13/14 texture zoom,
 - Runtime dependencies: NumPy, Pillow, Pygame (see `requirements.txt`).
   Optional: Numba. Build-time only: python-docx, imageio, imageio-ffmpeg.
 - No game engine, GPU renderer or third-party 3D mesh library is used.
+
 
