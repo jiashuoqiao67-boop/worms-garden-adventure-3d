@@ -1,4 +1,4 @@
-﻿# Worm's Garden Adventure 3D
+# Worm's Garden Adventure 3D
 
 Computer Graphics Programming (GEIAL31L-B2a) - Labs 10 & 11 (final assignment,
 20 % of the course grade).

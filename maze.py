@@ -1,4 +1,4 @@
-﻿"""
+"""
 Maze topology, neighbours and 2D -> 3D world coordinate conversion.
 
 Coordinate convention (handbook 4.1, 4.3):

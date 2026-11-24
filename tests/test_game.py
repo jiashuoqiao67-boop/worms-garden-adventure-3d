@@ -1,4 +1,4 @@
-﻿r"""
+r"""
 M10 self-check: level setup, apples, birds, scoring and finish rules.
 
 Run from the project root:

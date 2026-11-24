@@ -1,4 +1,4 @@
-﻿"""
+"""
 Offscreen demo video generator (handbook 17.3 demonstration script).
 
 Renders a scripted but genuine demonstration with our own software renderer and

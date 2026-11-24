@@ -1,4 +1,4 @@
-﻿"""
+"""
 3D particle system (handbook ch. 13).
 
 Every particle stores a 3-component position and velocity in world space.
