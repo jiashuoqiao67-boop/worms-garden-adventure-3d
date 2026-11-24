@@ -3,7 +3,7 @@ same maze seed, camera and scene for every row
 frames/preset = 12 (after 1 warm-up frame)
 
 PRESET     RESOLUTION       PIXELS   TRIS   MEAN ms  MEDIAN ms     FPS
-FAST       672x420          282240   6972     12.35      12.26    81.5
-BALANCED   1024x640         655360   6972     18.58       18.2    54.9
-HIGH       1600x1000       1600000   6972     34.41      34.47    29.0
-NATIVE     1280x800        1024000   6972     24.52      24.39    41.0
+FAST       672x420          282240   7000     12.58      11.92    83.9
+BALANCED   1024x640         655360   7000     18.64      17.68    56.6
+HIGH       1600x1000       1600000   7000     36.37      33.51    29.8
+NATIVE     1280x800        1024000   7000      24.8      24.55    40.7

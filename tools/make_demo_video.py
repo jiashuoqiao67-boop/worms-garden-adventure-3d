@@ -122,7 +122,7 @@ class Demo:
         self.state["position"] = cell_center_3d(*START_CELL, 0.22)
         reset_trail(self.state)
         self.scene = build_static_scene(self.state)
-        self.mats = build_materials()
+        self.mats = build_materials(bilinear=False)
         self.renderer = Renderer(W, H, background=SKY_BG,
                                  sky_grad=SKY_GRAD)
         self.particles = []
@@ -367,6 +367,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 

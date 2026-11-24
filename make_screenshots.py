@@ -114,9 +114,10 @@ def hud_shot(name, caption, env):
     child_env.update({
         "SDL_VIDEODRIVER": "dummy",
         "MAIN_SHOT": shot,
+        "MAIN_SHOT_FRAME": "36",
         "MAIN_WORM": "11,7",
         "MAIN_VIEW": "2",
-        "MAIN_QUALITY": "2",
+        "MAIN_QUALITY": "4",
         "MAIN_PROJECTION": "perspective",
         "MAIN_FOG": "0",
         "MAIN_WIRE": "0",
@@ -125,7 +126,7 @@ def hud_shot(name, caption, env):
     })
     child_env.update({k: str(v) for k, v in env.items()})
     subprocess.run([sys.executable, "-c",
-                    "import main; main.main(max_frames=6)"],
+                    "import main; main.main(max_frames=44)"],
                    cwd=ROOT, env=child_env, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     with Image.open(shot) as img:
@@ -138,7 +139,7 @@ def hud_shot(name, caption, env):
 # ---------------------------------------------------------------------------
 
 def _materials(filter_mode="nearest"):
-    mats = build_materials()
+    mats = build_materials(bilinear=False)
     for key in ("grass", "lawn", "stone"):
         mats[key].filter_mode = filter_mode
     return mats
@@ -309,9 +310,9 @@ def main():
     hud_shot("06_gameplay_follow.png",
              _caption_line("Gameplay chase camera: worm, apples, birds, water "
                            "hazards, HUD and minimap",
-                           "internal 1024x640 in a 1280x800 window",
+                           "internal 1280x800 (NATIVE, 1:1) in a 1280x800 window",
                            "F1/F3 debug views available"),
-             {"MAIN_VIEW": 2, "MAIN_QUALITY": 2})
+             {"MAIN_VIEW": 2, "MAIN_QUALITY": 4})
 
     # --- Internal resolution comparison (same camera, same scene) -------
     for name, quality, label, window in (
@@ -389,3 +390,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+

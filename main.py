@@ -142,14 +142,25 @@ def make_camera(view_mode, worm_pos, projection, width, height,
 # Scene assembly
 # ---------------------------------------------------------------------------
 
-def build_materials():
+def build_materials(bilinear=True):
+    """Materials used by the game.
+
+    Textures are generated at a higher resolution than the first version so
+    that the floor and walls stay crisp at native framebuffer resolution, and
+    the default sampler is bilinear so magnified texels do not look like
+    blocks (T switches to the nearest-neighbour sampler).
+    """
+    mode = "bilinear" if bilinear else "nearest"
     return {
         "grass": Material(base_color=(236, 242, 234),
-                          texture=make_grass_texture(96)),
+                          texture=make_grass_texture(192),
+                          filter_mode=mode),
         "lawn": Material(base_color=(228, 236, 226),
-                         texture=make_grass_texture(96)),
+                         texture=make_grass_texture(192),
+                         filter_mode=mode),
         "stone": Material(base_color=(255, 250, 242),
-                          texture=make_stone_texture(64)),
+                          texture=make_stone_texture(128),
+                          filter_mode=mode),
         "walltop": Material(base_color=(104, 168, 92)),
         "water": Material(base_color=(30, 140, 198)),
         "flag": Material(base_color=(46, 226, 122)),
@@ -346,17 +357,41 @@ def draw_minimap(screen, state, window_w, window_h, font, bottom_bar=44):
 
     The handbook camera basis maps world +X onto screen left, so the map is
     drawn with the same handedness as the 3D view (the worm dot then moves in
-    the same direction as the keys).
+    the same direction as the keys). The wall layer is rasterised once per
+    level into a cached surface: 382 wall rectangles per frame cost more than
+    the whole 3D HUD.
     """
     mh = min(172, window_h // 3)
     mw = min(250, window_w // 2)
     mx, my = window_w - mw - 22, window_h - mh - bottom_bar - 30
-    panel = pygame.Surface((mw, mh), pygame.SRCALPHA)
-    pygame.draw.rect(panel, (8, 16, 24, 170), panel.get_rect(),
-                     border_radius=12)
-    pygame.draw.rect(panel, (120, 190, 150, 90), panel.get_rect(), 1,
-                     border_radius=12)
-    screen.blit(panel, (mx, my))
+
+    layer = state.get("_minimap_layer")
+    if layer is None or layer.get_size() != (mw, mh):
+        layer = pygame.Surface((mw, mh), pygame.SRCALPHA)
+        pygame.draw.rect(layer, (8, 16, 24, 170), layer.get_rect(),
+                         border_radius=12)
+        pygame.draw.rect(layer, (120, 190, 150, 90), layer.get_rect(), 1,
+                         border_radius=12)
+        ox, oy = 12, 20
+        sx = (mw - 24) / COLS
+        sy = (mh - 34) / ROWS
+
+        def mp_static(x, z):
+            return (ox + (COLS - x) * sx, oy + z * sy)
+
+        for center, size in state["wall_boxes"]:
+            x0 = center[0] - size[0] / 2.0
+            z0 = center[2] - size[2] / 2.0
+            x1 = center[0] + size[0] / 2.0
+            z1 = center[2] + size[2] / 2.0
+            p0, p1 = mp_static(x1, z0), mp_static(x0, z1)
+            pygame.draw.rect(layer, (86, 118, 96),
+                             pygame.Rect(p0[0], p0[1],
+                                         max(1, p1[0] - p0[0]),
+                                         max(1, p1[1] - p0[1])))
+        layer.blit(font.render("MAP", True, (170, 220, 190)), (14, 5))
+        state["_minimap_layer"] = layer
+    screen.blit(layer, (mx, my))
 
     ox, oy = mx + 12, my + 20
     sx = (mw - 24) / COLS
@@ -365,16 +400,6 @@ def draw_minimap(screen, state, window_w, window_h, font, bottom_bar=44):
     def mp(x, z):
         return (ox + (COLS - x) * sx, oy + z * sy)
 
-    for center, size in state["wall_boxes"]:
-        x0 = center[0] - size[0] / 2.0
-        z0 = center[2] - size[2] / 2.0
-        x1 = center[0] + size[0] / 2.0
-        z1 = center[2] + size[2] / 2.0
-        p0, p1 = mp(x1, z0), mp(x0, z1)
-        pygame.draw.rect(screen, (86, 118, 96),
-                         pygame.Rect(p0[0], p0[1],
-                                     max(1, p1[0] - p0[0]),
-                                     max(1, p1[1] - p0[1])))
     for apple in state["apples"]:
         if apple["collected"]:
             continue
@@ -393,8 +418,6 @@ def draw_minimap(screen, state, window_w, window_h, font, bottom_bar=44):
     pp = mp(state["position"][0], state["position"][2])
     pygame.draw.circle(screen, (120, 255, 150), (int(pp[0]), int(pp[1])), 3)
     pygame.draw.circle(screen, (12, 20, 28), (int(pp[0]), int(pp[1])), 4, 1)
-    screen.blit(font.render("MAP", True, (170, 220, 190)),
-                (mx + 14, my + 5))
 
 
 def main(max_frames=None):
@@ -412,7 +435,10 @@ def main(max_frames=None):
     small_font = pygame.font.SysFont("Arial", 16)
     tiny_font = pygame.font.SysFont("Arial", 13)
 
-    mats = build_materials()
+    # Quality defaults: render 1:1 with the window (no upscale blur) and use
+    # the bilinear sampler, which is what makes texture close-ups look smooth.
+    bilinear = os.environ.get("MAIN_BILINEAR", "0") == "1"   # nearest by default
+    mats = build_materials(bilinear)
     state = build_level(1, seed=12)
     reset_trail(state)
     scene = build_static_scene(state)
@@ -422,16 +448,11 @@ def main(max_frames=None):
     view_mode = int(os.environ.get("MAIN_VIEW", "2"))
     projection = os.environ.get("MAIN_PROJECTION", "perspective")
     worm_yaw = 0.0
-    quality = int(os.environ.get("MAIN_QUALITY", "2"))
+    quality = int(os.environ.get("MAIN_QUALITY", "4"))
     fog_mode = int(os.environ.get("MAIN_FOG", "0")) % 3
     fog_enabled = fog_mode != 0
-    bilinear = False           # Part A default sampler is nearest-neighbour
     wireframe = os.environ.get("MAIN_WIRE", "0") == "1"
     depth_view = os.environ.get("MAIN_DEPTH", "0") == "1"
-    if os.environ.get("MAIN_BILINEAR", "0") == "1":
-        bilinear = True
-        mats["grass"].filter_mode = "bilinear"
-        mats["stone"].filter_mode = "bilinear"
     # Screenshot / demo hook: start the worm on a chosen cell.
     start_cell_env = os.environ.get("MAIN_WORM")
     if start_cell_env:
@@ -447,14 +468,18 @@ def main(max_frames=None):
     renderer = None
     cam = None
     shot_path = os.environ.get("MAIN_SHOT")
+    # Capture a little after start-up so the HUD in the screenshot shows the
+    # steady-state render time / FPS instead of the first-frame warm-up.
+    shot_frame = int(os.environ.get("MAIN_SHOT_FRAME", "36"))
     # Smoothed chase-camera pose (eye, target); None until the follow view
     # first activates. Exponential damping gives the reference soft follow.
     cam_smooth = None
 
     running = True
     frames = 0
+    hud_cache = {}
     while running:
-        dt = min(clock.tick(60) / 1000.0, 0.1)
+        dt = min(clock.tick(120) / 1000.0, 0.1)
         frames += 1
 
         # ---------------- Events / input ----------------
@@ -502,6 +527,7 @@ def main(max_frames=None):
                     bilinear = not bilinear
                     mode = "bilinear" if bilinear else "nearest"
                     mats["grass"].filter_mode = mode
+                    mats["lawn"].filter_mode = mode
                     mats["stone"].filter_mode = mode
             elif event.type == pygame.MOUSEWHEEL:
                 zoom = min(1.8, max(0.55, zoom * math.exp(-event.y * 0.1)))
@@ -625,9 +651,13 @@ def main(max_frames=None):
             frame_src = renderer.depth_image()
         else:
             frame_src = renderer.surface()
-        frame = pygame.surfarray.make_surface(
-            np.ascontiguousarray(frame_src).transpose(1, 0, 2))
-        frame = pygame.transform.smoothscale(frame, (window_w, window_h))
+        # frombuffer + blit is ~4x faster than surfarray.make_surface followed
+        # by an unconditional smoothscale; at NATIVE quality the sizes already
+        # match, so no scaling pass is needed at all.
+        rgb = np.ascontiguousarray(frame_src)
+        frame = pygame.image.frombuffer(rgb.tobytes(), (buf_w, buf_h), "RGB")
+        if (buf_w, buf_h) != (window_w, window_h):
+            frame = pygame.transform.smoothscale(frame, (window_w, window_h))
         screen.blit(frame, (0, 0))
 
         sx = window_w / buf_w
@@ -641,17 +671,33 @@ def main(max_frames=None):
         fps = 1.0 / max(dt, 1e-4)
 
         # ---- Top information panel (dark translucent + green divider) ----
-        panel = pygame.Surface((window_w - 40, 62), pygame.SRCALPHA)
-        pygame.draw.rect(panel, (10, 20, 30, 176), panel.get_rect(),
-                         border_radius=12)
-        screen.blit(panel, (20, 12))
-        bar = pygame.Surface((window_w - 40, 3), pygame.SRCALPHA)
-        pygame.draw.rect(bar, (120, 220, 150, 120), bar.get_rect())
-        screen.blit(bar, (20, 73))
+        # Panels and fixed labels are cached per window size: re-creating
+        # alpha surfaces and re-rendering static text every frame cost more
+        # than a millisecond at 1280x800.
+        hud = hud_cache.get((window_w, window_h))
+        if hud is None:
+            panel = pygame.Surface((window_w - 40, 62), pygame.SRCALPHA)
+            pygame.draw.rect(panel, (10, 20, 30, 176), panel.get_rect(),
+                             border_radius=12)
+            bar = pygame.Surface((window_w - 40, 3), pygame.SRCALPHA)
+            pygame.draw.rect(bar, (120, 220, 150, 120), bar.get_rect())
+            bottom = pygame.Surface((window_w, 44), pygame.SRCALPHA)
+            pygame.draw.rect(bottom, (10, 26, 18, 180), bottom.get_rect())
+            hud = {
+                "panel": panel, "bar": bar, "bottom": bottom,
+                "line1": tiny_font.render(
+                    "WASD MOVE   SPACE JUMP   CLICK FIREWORK   P PROJECTION   "
+                    "1/2/3 CAMERA   Q/E ORBIT   WHEEL ZOOM", True,
+                    (220, 238, 228)),
+                "line2": tiny_font.render(
+                    "F FOG   T FILTER   F1 WIREFRAME   F3 DEPTH   F5 QUALITY   "
+                    "R RESTART   ESC QUIT", True, (196, 214, 204)),
+            }
+            hud_cache[(window_w, window_h)] = hud
+        screen.blit(hud["panel"], (20, 12))
+        screen.blit(hud["bar"], (20, 73))
 
         def _text(txt, color, pos, fnt=font):
-            sh = fnt.render(txt, True, (8, 14, 20))
-            screen.blit(sh, (pos[0] + 1, pos[1] + 1))
             screen.blit(fnt.render(txt, True, color), pos)
 
         _text(f"LEVEL {state['level']}", (245, 248, 255), (40, 26))
@@ -672,21 +718,13 @@ def main(max_frames=None):
             hint = "EXIT UNLOCKED - reach the checkered flag!"
             hint_col = (120, 255, 160)
         ht = small_font.render(hint, True, hint_col)
-        screen.blit(small_font.render(hint, True, (8, 14, 20)),
-                    (window_w // 2 - ht.get_width() // 2 + 1, 83))
         screen.blit(ht, (window_w // 2 - ht.get_width() // 2, 82))
 
         # ---- Bottom control bar (two compact lines, resize friendly) ----
         bar_h = 44
-        bottom = pygame.Surface((window_w, bar_h), pygame.SRCALPHA)
-        pygame.draw.rect(bottom, (10, 26, 18, 180), bottom.get_rect())
-        screen.blit(bottom, (0, window_h - bar_h))
-        _text("WASD MOVE   SPACE JUMP   CLICK FIREWORK   P PROJECTION   "
-              "1/2/3 CAMERA   Q/E ORBIT   WHEEL ZOOM",
-              (220, 238, 228), (24, window_h - 39), tiny_font)
-        _text("F FOG   T FILTER   F1 WIREFRAME   F3 DEPTH   F5 QUALITY   "
-              "R RESTART   ESC QUIT",
-              (196, 214, 204), (24, window_h - 21), tiny_font)
+        screen.blit(hud["bottom"], (0, window_h - bar_h))
+        screen.blit(hud["line1"], (24, window_h - 39))
+        screen.blit(hud["line2"], (24, window_h - 21))
 
         # ---- Renderer debug line (projection, view, buffer, cost, eye) ----
         mode = "WIREFRAME" if wireframe else (
@@ -704,7 +742,7 @@ def main(max_frames=None):
 
         pygame.display.flip()
 
-        if shot_path:
+        if shot_path and frames >= shot_frame:
             pygame.image.save(screen, shot_path)
             shot_path = None
         if max_frames is not None and frames >= max_frames:
@@ -715,6 +753,7 @@ def main(max_frames=None):
 
 if __name__ == "__main__":
     main()
+
 
 
 

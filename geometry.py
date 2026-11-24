@@ -159,33 +159,42 @@ def ground_mesh(cols=3, rows=3, y=0.0, uv_per_unit=1.0) -> Mesh:
                 uvs=uvs)
 
 
-def lawn_mesh(cols, rows, margin=16.0, y=-0.01, step=2.0,
+def lawn_mesh(cols, rows, margin=16.0, y=-0.01, step=8.0,
               uv_per_unit=0.5) -> Mesh:
-    """A large grass plane under and around the maze.
+    """The lawn *around* the maze (a ring, not a full plane).
 
-    Without it the maze looks like a floating slab and the horizon shows the
-    sky through the floor edge.
+    The maze floor is drawn separately, so the lawn skips the area under the
+    maze: those pixels would only lose the depth test and cost fill time.
     """
     x0, z0 = -margin, -margin
     x1, z1 = cols + margin, rows + margin
-    nx = max(2, int(math.ceil((x1 - x0) / step)))
-    nz = max(2, int(math.ceil((z1 - z0) / step)))
+    # (xa, xb, za, zb) rectangles covering everything outside the maze.
+    rects = (
+        (x0, x1, z0, 0.0),
+        (x0, x1, rows, z1),
+        (x0, 0.0, 0.0, rows),
+        (cols, x1, 0.0, rows),
+    )
     vertices, uvs, triangles = [], [], []
-    for iz in range(nz + 1):
-        z = z0 + (z1 - z0) * iz / nz
-        for ix in range(nx + 1):
-            x = x0 + (x1 - x0) * ix / nx
-            vertices.append([x, y, z])
-            uvs.append([x * uv_per_unit, z * uv_per_unit])
-    stride = nx + 1
-    for iz in range(nz):
-        for ix in range(nx):
-            v00 = iz * stride + ix
-            v10 = v00 + 1
-            v01 = v00 + stride
-            v11 = v01 + 1
-            triangles.append((v00, v01, v11))
-            triangles.append((v00, v11, v10))
+    for (xa, xb, za, zb) in rects:
+        nx = max(1, int(math.ceil((xb - xa) / step)))
+        nz = max(1, int(math.ceil((zb - za) / step)))
+        base = len(vertices)
+        for iz in range(nz + 1):
+            z = za + (zb - za) * iz / nz
+            for ix in range(nx + 1):
+                x = xa + (xb - xa) * ix / nx
+                vertices.append([x, y, z])
+                uvs.append([x * uv_per_unit, z * uv_per_unit])
+        stride = nx + 1
+        for iz in range(nz):
+            for ix in range(nx):
+                v00 = base + iz * stride + ix
+                v10 = v00 + 1
+                v01 = v00 + stride
+                v11 = v01 + 1
+                triangles.append((v00, v01, v11))
+                triangles.append((v00, v11, v10))
     return Mesh(vertices=np.array(vertices, dtype=float),
                 triangles=np.array(triangles, dtype=int),
                 uvs=np.array(uvs, dtype=float))

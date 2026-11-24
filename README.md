@@ -93,7 +93,7 @@ bottom-right corridor minimap (walls, apples, birds, worm, start, exit).
 | `benchmark.py` | Offscreen benchmark -> `results/benchmark.json` / `.txt` |
 | `make_screenshots.py` | Regenerates every captioned evidence image in `screenshots/` |
 | `tools/build_report.py` | Rebuilds `report/Worms_Garden_Adventure_3D_Report.docx` |
-| `tools/make_demo_video.py` | Renders `report/demo_video.mp4` (2:20, 1280x720, 24 fps) |
+| `tools/make_demo_video.py` | Renders `report/demo_video.mp4` (2:05, 1280x720, 24 fps) |
 | `tests/` | 12 self-contained numerical and gameplay checks |
 | `screenshots/` | Labelled evidence images (19 files) |
 | `results/` | Measured performance table |
@@ -131,23 +131,33 @@ Evidence screenshots (writes `screenshots/`, needs no display):
 .venv\Scripts\python.exe make_screenshots.py
 ```
 
-## Measured performance
+## Image quality and measured performance
+
+The shipped default is **NATIVE**: the framebuffer is exactly the window size
+(1280x800), so the image is displayed 1:1 with no upscale blur, and the
+procedural textures are 192x192 (grass) and 128x128 (stone) so magnified texels
+stay fine. F5 cycles the presets; T switches between the nearest-neighbour
+(Part A) and bilinear (Part B) samplers.
 
 Offscreen benchmark, same maze seed / camera / scene, 12 frames per preset
-after one warm-up frame (1280x800 window, 6972 triangles submitted):
+after one warm-up frame (1280x800 window, 7000 triangles submitted):
 
 | Preset | Framebuffer | Pixels | Mean render ms | FPS |
 |---|---|---|---|---|
-| FAST | 672x420 | 282,240 | 12.35 | 81.5 |
-| BALANCED (default) | 1024x640 | 655,360 | 18.58 | 54.9 |
-| HIGH | 1600x1000 | 1,600,000 | 34.41 | 29.0 |
-| NATIVE | 1280x800 | 1,024,000 | 24.52 | 41.0 |
+| FAST | 672x420 | 282,240 | 11.92 | 83.9 |
+| BALANCED | 1024x640 | 655,360 | 17.68 | 56.6 |
+| HIGH (supersampled) | 1600x1000 | 1,600,000 | 33.51 | 29.8 |
+| NATIVE (default) | 1280x800 | 1,024,000 | 24.55 | 40.7 |
 
-The cost now scales with the number of pixels (per-fragment shading), not with
-triangle count, which is what the batching work was for. The third-person
-follow camera costs a little more because geometry near the eye crosses the
-near plane and takes the Sutherland-Hodgman path (~220 triangles per frame).
-Numba is optional; without it the NumPy fallback is several times slower.
+Measured with the real game loop (follow camera, HUD and display included, frame
+cap 120): **~39 fps at NATIVE, ~41 fps at BALANCED, ~54 fps at FAST**. The cost
+scales with the number of pixels (per-fragment shading), not with triangle
+count, which is what the batching work was for. The third-person follow camera
+costs more than the overview because geometry near the eye crosses the near
+plane and takes the Sutherland-Hodgman path (~220 triangles per frame); its
+static triangles are cached, the sky is a baked image, the depth buffer is
+float32, and the HUD/minimap layers are rasterised once. Numba is optional;
+without it the NumPy fallback is several times slower.
 
 ## Extensions (Part B)
 
@@ -177,7 +187,7 @@ Limitation: no mipmaps, so minified distant textures still alias.
 | Item | Location |
 |---|---|
 | Technical report, 10 pages (DOCX) | `report/Worms_Garden_Adventure_3D_Report.docx` |
-| Demo recording, 2:20, 1280x720, 24 fps | `report/demo_video.mp4` |
+| Demo recording, 2:05, 1280x720, 24 fps | `report/demo_video.mp4` |
 | Screenshots, 19 labelled images | `screenshots/` |
 | Performance table | `results/benchmark.txt`, `results/benchmark.json` |
 | Unit/integration tests | `tests/` |
@@ -199,5 +209,6 @@ resolution, 09/10 fog off/heavy, 11/12 nearest/bilinear, 13/14 texture zoom,
 - Runtime dependencies: NumPy, Pillow, Pygame (see `requirements.txt`).
   Optional: Numba. Build-time only: python-docx, imageio, imageio-ffmpeg.
 - No game engine, GPU renderer or third-party 3D mesh library is used.
+
 
 

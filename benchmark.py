@@ -45,7 +45,7 @@ def main():
     pygame.init()
     pygame.display.set_mode((1, 1))  # offscreen; no real window needed
 
-    mats = build_materials()
+    mats = build_materials(bilinear=False)   # measure the shipped default
     state = build_level(1, seed=12)
     state["position"] = cell_center_3d(11, 7, state["position"][1])
     reset_trail(state)
@@ -108,3 +108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

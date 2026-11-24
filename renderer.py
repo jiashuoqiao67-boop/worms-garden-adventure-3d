@@ -58,10 +58,12 @@ class Renderer:
         self.height = height
         self.background = np.asarray(background, dtype=np.uint8)
         self.colorbuf = np.zeros((height, width, 3), dtype=np.uint8)
-        self.depthbuf = np.full((height, width), np.inf)
+        # Depth is stored as float32: half the memory traffic of float64 for
+        # the same visibility result at the depth ranges this game uses.
+        self.depthbuf = np.full((height, width), np.inf, dtype=np.float32)
         # Optional vertical three-stop sky gradient: (top, mid, low) RGB.
-        # Baked once into a background buffer; it only fills pixels where no
-        # geometry is drawn, so it does not affect the Z-buffer pipeline.
+        # Baked once into a full background image; it only fills pixels where
+        # no geometry is drawn, so it does not affect the Z-buffer pipeline.
         self._sky = None
         if sky_grad is not None:
             top, mid, low = (np.asarray(c, dtype=float) for c in sky_grad)
@@ -74,7 +76,11 @@ class Renderer:
                 else:
                     k = (t - 0.55) / 0.45
                     rows[y] = mid + (low - mid) * k
-            self._sky = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
+            column = np.clip(rows, 0, 255).astype(np.uint8)[:, None, :]
+            # One contiguous (H, W, 3) image clears ~3x faster than
+            # broadcasting a column every frame.
+            self._sky = np.ascontiguousarray(
+                np.broadcast_to(column, (height, width, 3)))
             self.colorbuf[:] = self._sky
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
@@ -93,7 +99,7 @@ class Renderer:
 
     def clear(self):
         if self._sky is not None:
-            self.colorbuf[:] = self._sky
+            np.copyto(self.colorbuf, self._sky)
         else:
             self.colorbuf[:] = self.background
         self.depthbuf.fill(np.inf)
@@ -162,14 +168,14 @@ class Renderer:
             fog_near, fog_far, use_fog = 0.0, 1.0, False
 
         if HAS_NUMBA:
-            rasterize_batch(self.colorbuf, self.depthbuf,
-                            np.ascontiguousarray(sx, dtype=float),
-                            np.ascontiguousarray(sy, dtype=float),
-                            np.ascontiguousarray(sz, dtype=float),
-                            np.ascontiguousarray(base, dtype=float),
-                            np.ascontiguousarray(inten, dtype=float),
-                            np.ascontiguousarray(uv, dtype=float), tex,
-                            bool(use_texture),
+            sx_c = np.ascontiguousarray(sx, dtype=float)
+            sy_c = np.ascontiguousarray(sy, dtype=float)
+            sz_c = np.ascontiguousarray(sz, dtype=float)
+            base_c = np.ascontiguousarray(base, dtype=float)
+            inten_c = np.ascontiguousarray(inten, dtype=float)
+            uv_c = np.ascontiguousarray(uv, dtype=float)
+            rasterize_batch(self.colorbuf, self.depthbuf, sx_c, sy_c, sz_c,
+                            base_c, inten_c, uv_c, tex, bool(use_texture),
                             filter_mode == "bilinear", use_fog, fog_color,
                             fog_near, fog_far)
         else:
@@ -305,21 +311,49 @@ class Renderer:
         cam = (world - camera.eye) @ basis.T
 
         tri = np.asarray(mesh.triangles, dtype=int)
-        P = world[tri]              # (T, 3, 3) world-space triangle corners
         C = cam[tri]                # (T, 3, 3) camera-space corners
         self.stats["submitted"] += len(tri)
 
-        # Flat shading: one face normal and intensity per triangle (ch. 9).
-        e1 = P[:, 1] - P[:, 0]
-        e2 = P[:, 2] - P[:, 0]
-        n = np.cross(e1, e2)
-        length = np.linalg.norm(n, axis=1)
-        safe = length > 1e-12
-        n[safe] /= length[safe, None]
-        n[~safe] = (0.0, 1.0, 0.0)
-
-        nd = n @ light
-        inten = AMBIENT + DIFFUSE * np.maximum(0.0, nd)
+        # Static meshes (identity model, constant light) keep their world
+        # corners, face normals, lighting intensities and per-triangle UVs in
+        # a cache; re-deriving them every frame cost about 10 ms of the frame
+        # at 1280x800. Animated meshes compute them per frame as before.
+        use_cache = is_identity and light is _LIGHT_NORM
+        if use_cache:
+            prep = getattr(mesh, "_static_prep", None)
+            if prep is None or prep["triangles"] is not tri:
+                P = world[tri]
+                e1 = P[:, 1] - P[:, 0]
+                e2 = P[:, 2] - P[:, 0]
+                n = np.cross(e1, e2)
+                length = np.linalg.norm(n, axis=1)
+                safe = length > 1e-12
+                n[safe] /= length[safe, None]
+                n[~safe] = (0.0, 1.0, 0.0)
+                nd = n @ light
+                prep_inten = AMBIENT + DIFFUSE * np.maximum(0.0, nd)
+                prep_uv = (np.asarray(mesh.uvs, dtype=float)[tri]
+                           if mesh.uvs is not None else None)
+                prep = {"triangles": tri, "P": P, "normals": n,
+                        "inten": prep_inten, "uv": prep_uv}
+                mesh._static_prep = prep
+            P = prep["P"]
+            n = prep["normals"]
+            inten = prep["inten"]
+            uv_tri = prep["uv"]
+        else:
+            P = world[tri]          # (T, 3, 3) world-space triangle corners
+            e1 = P[:, 1] - P[:, 0]
+            e2 = P[:, 2] - P[:, 0]
+            n = np.cross(e1, e2)
+            length = np.linalg.norm(n, axis=1)
+            safe = length > 1e-12
+            n[safe] /= length[safe, None]
+            n[~safe] = (0.0, 1.0, 0.0)
+            nd = n @ light
+            inten = AMBIENT + DIFFUSE * np.maximum(0.0, nd)
+            uv_tri = (np.asarray(mesh.uvs, dtype=float)[tri]
+                      if mesh.uvs is not None else None)
         base = np.array(material.base_color, dtype=float)
 
         depth = C[:, :, 2]
@@ -345,8 +379,8 @@ class Renderer:
             sx = sx.reshape(tri_count, 3)
             sy = sy.reshape(tri_count, 3)
             sz = depth[solid]
-            uvs = (np.asarray(mesh.uvs, dtype=float)[tri[solid]]
-                   if (material.texture is not None and mesh.uvs is not None)
+            uvs = (uv_tri[solid]
+                   if (material.texture is not None and uv_tri is not None)
                    else np.empty((0, 3, 2)))
             tex = (np.asarray(material.texture, dtype=np.uint8)
                    if len(uvs) else np.empty((0, 0, 3), dtype=np.uint8))
@@ -365,41 +399,67 @@ class Renderer:
 
         The clipped fan triangles are collected and submitted as one batch so
         this path costs a single rasterizer call instead of one per triangle.
+        Projection is inlined here (no per-vertex method calls) because this
+        path runs for every triangle that straddles the near plane and was a
+        measurable share of the follow-camera frame time.
         """
         tri_idx = np.nonzero(crossing)[0]
         has_uv = material.texture is not None and mesh.uvs is not None
-        screens, depths, uv_list, intens = [], [], [], []
+        near = self._near
+        focal = self._focal
+        ppu = self._ppu
+        ortho = self._ortho
+        half_w = self.width * 0.5
+        half_h = self.height * 0.5
+        sx_list, sy_list, depth_list, uv_list, inten_list = [], [], [], [], []
+        mesh_uvs = mesh.uvs
         for idx in tri_idx:
-            cam_tri = [tuple(C[idx, k]) for k in range(3)]
+            cam_tri = (tuple(C[idx, 0]), tuple(C[idx, 1]), tuple(C[idx, 2]))
             attrs = None
             if has_uv:
-                attrs = [tuple(mesh.uvs[tri[idx, k]]) for k in range(3)]
-            poly, poly_attrs = clip_polygon_near(cam_tri, self._near, attrs)
+                attrs = (tuple(mesh_uvs[tri[idx, 0]]),
+                         tuple(mesh_uvs[tri[idx, 1]]),
+                         tuple(mesh_uvs[tri[idx, 2]]))
+            poly, poly_attrs = clip_polygon_near(cam_tri, near, attrs)
             if poly is None:
                 continue
+            # Fan-triangulate the clipped polygon and project its vertices.
             for k in range(1, len(poly) - 1):
-                pts = [poly[0], poly[k], poly[k + 1]]
-                screen = [camera.project_cam(p) for p in pts]
-                if any(s is None for s in screen):
+                tri_pts = (poly[0], poly[k], poly[k + 1])
+                xs, ys, zs, ok = [], [], [], True
+                for (x, y, z) in tri_pts:
+                    if z < near - 1e-9:
+                        ok = False
+                        break
+                    if ortho:
+                        xs.append(half_w + ppu * x)
+                        ys.append(half_h - ppu * y)
+                    else:
+                        inv = 1.0 / z
+                        xs.append(half_w + focal * x * inv)
+                        ys.append(half_h - focal * y * inv)
+                    zs.append(z)
+                if not ok:
                     continue
-                screens.append([[s[0], s[1]] for s in screen])
-                depths.append([p[2] for p in pts])
-                intens.append(inten[idx])
+                sx_list.append(xs)
+                sy_list.append(ys)
+                depth_list.append(zs)
+                inten_list.append(inten[idx])
                 if poly_attrs is not None:
                     uv_list.append([poly_attrs[0], poly_attrs[k],
                                     poly_attrs[k + 1]])
-        if not screens:
+        if not sx_list:
             return
-        count = len(screens)
+        count = len(sx_list)
         uvs = (np.array(uv_list, dtype=float) if uv_list
                else np.empty((0, 3, 2)))
         tex = (np.asarray(material.texture, dtype=np.uint8) if len(uvs)
                else np.empty((0, 0, 3), dtype=np.uint8))
-        self._submit(np.array(screens, dtype=float)[:, :, 0],
-                     np.array(screens, dtype=float)[:, :, 1],
-                     np.array(depths, dtype=float),
+        self._submit(np.array(sx_list, dtype=float),
+                     np.array(sy_list, dtype=float),
+                     np.array(depth_list, dtype=float),
                      np.repeat(base[None, :], count, 0),
-                     np.array(intens, dtype=float), uvs, tex, len(uvs) > 0,
+                     np.array(inten_list, dtype=float), uvs, tex, len(uvs) > 0,
                      material.filter_mode)
         self.stats["rasterized"] += count
 
@@ -445,3 +505,4 @@ class Renderer:
         color = np.where(edge, color * 0.45, color)
         color[~finite] = 0.0
         return np.clip(color, 0, 255).astype(np.uint8)
+

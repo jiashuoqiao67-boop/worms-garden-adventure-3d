@@ -285,14 +285,17 @@ def main():
         "unchanged), which is how the bright maze floor and the darker "
         "surrounding lawn share one procedurally generated grass image.")
     doc.add_paragraph(
-        "Pillow generates both textures at start-up: a 96x96 grass image of "
+        "Pillow generates both textures at start-up: a 192x192 grass image of "
         "short blade strokes over five green tones plus darker tufts, and a "
-        "64x64 stone image made of four brick courses with mortar lines, "
-        "per-brick tone variation and fine speckle. Every wall face owns its own "
-        "four vertices with a 0..1 UV rectangle scaled by the face size, so the "
-        "stone keeps its aspect on walls of different lengths and the texture "
-        "repeats once per world unit. The Part A sampler is nearest-neighbour "
-        "with wrap; T switches to the bilinear extension.")
+        "128x128 stone image made of four brick courses with mortar lines, "
+        "per-brick tone variation and fine speckle. The resolutions were raised "
+        "from 96/64 after the first build, because at native framebuffer "
+        "resolution the magnified texels of the smaller images were clearly "
+        "visible as blocks. Every wall face owns its own four vertices with a "
+        "0..1 UV rectangle scaled by the face size, so the stone keeps its "
+        "aspect on walls of different lengths and the texture repeats once per "
+        "world unit. The Part A sampler is nearest-neighbour with wrap, which "
+        "is the shipped default; T switches to the bilinear extension.")
     add_image(doc, "05_textured_scene.png", 4.7,
               "Figure 5. Close view: stone walls, grass floor, flat lighting; "
               "the darker faces are those turned away from the light.")
@@ -432,25 +435,34 @@ def main():
         "per frame. Only the framebuffer size changes between rows.")
     small_table(doc, bench_rows, widths=(0.8, 1.05, 0.8, 0.75, 0.7, 0.8, 0.55))
     doc.add_paragraph(
-        f"Render time scales with the number of pixels (about {fps_values[0]:.0f} "
-        f"to {fps_values[-1]:.0f} fps for this scene), which shows that after "
-        "the batching work the cost is dominated by per-fragment shading rather "
-        "than per-triangle Python overhead. The optimisation path was: "
+        f"Render time scales with the number of pixels ({fps_values[0]:.0f} fps "
+        f"at 672x420 down to {fps_values[-1]:.0f} fps at 1600x1000 for this "
+        "scene), which shows that the cost is dominated by per-fragment shading "
+        "rather than per-triangle Python work. The optimisation path was: "
         "vectorize the model and camera transforms per mesh, merge the static "
         "geometry into six meshes, cull back faces in world space, submit all "
-        "front-facing triangles of a mesh to one compiled batch, and replace "
-        "per-pixel barycentric recomputation with scanline increments. The "
-        "optional Numba JIT (handbook p.4) compiles the fragment loop; if Numba "
-        "is not installed the renderer automatically uses its NumPy fallback, "
-        "which is correct but several times slower. The chase camera also costs "
-        "more than the overview because walls and the floor near the eye cross "
-        "the near plane and take the Sutherland-Hodgman path: about 220 "
-        "triangles per frame in the follow view.")
-    bullet(doc, "The software renderer is CPU-bound and not real-time at HIGH "
-                "quality on this laptop; BALANCED (1024x640) is the default and "
-                "stays interactive.")
+        "front-facing triangles of a mesh to one compiled batch, replace "
+        "per-pixel barycentric recomputation with scanline increments, and then "
+        "remove the remaining per-frame overheads that a profile pointed at: the "
+        "world corners, normals, lighting intensities and per-triangle UVs of "
+        "static meshes are cached on first use (they never change), the sky "
+        "background is baked into one contiguous image so clearing is a memcpy, "
+        "the depth buffer is float32, the clipped-triangle path projects inline "
+        "instead of calling a method per vertex, the lawn is built as a ring "
+        "around the maze instead of a full plane (the covered middle only lost "
+        "the depth test), and the HUD panels, control labels and the 382-rect "
+        "minimap wall layer are rasterised once and blitted. Together with the "
+        "framebuffer blit change (image.frombuffer instead of surfarray plus an "
+        "unconditional smoothscale) these took the follow-camera frame from "
+        "about 40 ms to about 25 ms.")
+    bullet(doc, "The shipped default is NATIVE: the framebuffer is exactly the "
+                "window size (1280x800), so the image is displayed 1:1 and no "
+                "upscale blur is added. The measured game loop runs at about 39 "
+                "fps at NATIVE, 41 fps at BALANCED and 54 fps at FAST on this "
+                "laptop; the loop is capped at 120 fps and the HUD shows the "
+                "real frame time.")
     bullet(doc, "No antialiasing and no mipmaps: polygon edges and distant "
-                "minified textures can alias, and HIGH quality can render more "
+                "minified textures can alias, and HIGH quality renders more "
                 "pixels than the window shows (supersampling) before "
                 "smoothscale.")
     bullet(doc, "Flat shading only: no specular highlights, smooth vertex "
