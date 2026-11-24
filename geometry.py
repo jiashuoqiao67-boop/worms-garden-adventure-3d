@@ -294,7 +294,11 @@ def sphere_mesh(radius=1.0, center=(0.0, 0.0, 0.0), rings=5, sectors=8,
 
 
 def disc_mesh(radius=0.26, center=(0.0, 0.0, 0.0), segments=12) -> Mesh:
-    """Flat upward-facing disc on the ground (water-hole pad)."""
+    """Flat upward-facing disc on the ground (water-hole pad).
+
+    The fan is wound (centre, next, current) so the face normal points +Y;
+    the opposite winding faces down and would be removed by back-face culling.
+    """
     cx, cy, cz = center
     vertices = [[cx, cy, cz]]
     for j in range(segments):
@@ -305,7 +309,7 @@ def disc_mesh(radius=0.26, center=(0.0, 0.0, 0.0), segments=12) -> Mesh:
     for j in range(segments):
         a = 1 + j
         b = 1 + (j + 1) % segments
-        triangles.append((0, a, b))   # winding -> normal +Y
+        triangles.append((0, b, a))   # winding -> normal +Y
     return Mesh(vertices=np.array(vertices, dtype=float),
                 triangles=np.array(triangles, dtype=int))
 

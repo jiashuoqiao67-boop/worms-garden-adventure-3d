@@ -335,7 +335,13 @@ def main():
     bullet(doc, "Water: a water hole resets the worm only when its centre is "
                 "within 0.05 units of the ground height, so a jump genuinely "
                 "clears a hole; the reset returns the worm and its trail to the "
-                "start cell.")
+                "start cell. Each hole is drawn as a bright blue disc with a "
+                "dark rim, and a short HUD message explains the reset. The "
+                "first build wound the disc fan backwards, so the back-face "
+                "test removed every water pad and the player was teleported by "
+                "an invisible trap; the winding is fixed and "
+                "test_water_disc_faces_up now asserts that every pad normal "
+                "points up.")
     bullet(doc, "Birds: a 3D sphere test (worm 0.22 + bird 0.20) that includes "
                 "the vertical separation. The bird's flight band "
                 "(0.55 +/- 0.20) overlaps the whole jump arc (0.22 to 0.73), so "

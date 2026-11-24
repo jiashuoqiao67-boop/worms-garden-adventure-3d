@@ -163,6 +163,7 @@ def build_materials(bilinear=True):
                           filter_mode=mode),
         "walltop": Material(base_color=(104, 168, 92)),
         "water": Material(base_color=(30, 140, 198)),
+        "water_rim": Material(base_color=(18, 66, 120)),
         "flag": Material(base_color=(46, 226, 122)),
         "red": Material(base_color=(214, 44, 54)),
         "gold": Material(base_color=(250, 186, 34)),
@@ -186,8 +187,15 @@ def build_static_scene(state):
     ground = ground_mesh(COLS, ROWS, uv_per_unit=0.5)
     lawn = lawn_mesh(COLS, ROWS, margin=60.0, step=8.0, uv_per_unit=0.5)
     wall_sides, wall_tops = maze_wall_meshes(state["maze"], COLS, ROWS)
+    # Water hazards: a dark rim plus a bright blue disc so the trap that
+    # resets the worm is unmistakable on the ground (the collision radius is
+    # worm radius + hole radius, i.e. exactly the rim).
     pads = merge_meshes([
-        disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.02, hole[1]))
+        disc_mesh(WATER_HOLE_RADIUS + 0.07, (hole[0], 0.012, hole[1]))
+        for hole in state["water_holes"]
+    ])
+    water = merge_meshes([
+        disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.03, hole[1]))
         for hole in state["water_holes"]
     ])
     start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
@@ -198,11 +206,13 @@ def build_static_scene(state):
         "wall_sides": wall_sides,
         "wall_tops": wall_tops,
         "pads": pads,
+        "water": water,
         "start_flag": start_flag,
         "finish_flag": finish_flag,
         "triangles": (len(ground.triangles) + len(lawn.triangles)
                       + len(wall_sides.triangles)
                       + len(wall_tops.triangles) + len(pads.triangles)
+                      + len(water.triangles)
                       + len(start_flag.triangles)
                       + len(finish_flag.triangles)),
     }
@@ -213,10 +223,12 @@ def draw_static(renderer, cam, scene, mats):
     # fail the Z-buffer test before their texture is sampled (early-Z).
     renderer.draw_mesh(cam, scene["wall_sides"], IDENTITY, mats["stone"])
     renderer.draw_mesh(cam, scene["wall_tops"], IDENTITY, mats["walltop"])
-    renderer.draw_mesh(cam, scene["pads"], IDENTITY, mats["water"])
+    renderer.draw_mesh(cam, scene["ground"], IDENTITY, mats["grass"])
+    # Water hazards are drawn after the floor they sit on (rim, then water).
+    renderer.draw_mesh(cam, scene["pads"], IDENTITY, mats["water_rim"])
+    renderer.draw_mesh(cam, scene["water"], IDENTITY, mats["water"])
     renderer.draw_mesh(cam, scene["start_flag"], IDENTITY, mats["flag"])
     renderer.draw_mesh(cam, scene["finish_flag"], IDENTITY, mats["red"])
-    renderer.draw_mesh(cam, scene["ground"], IDENTITY, mats["grass"])
     renderer.draw_mesh(cam, scene["lawn"], IDENTITY, mats["lawn"])
 
 
@@ -478,6 +490,8 @@ def main(max_frames=None):
     running = True
     frames = 0
     hud_cache = {}
+    splash_msg = None
+    splash_until = 0.0
     while running:
         dt = min(clock.tick(120) / 1000.0, 0.1)
         frames += 1
@@ -575,18 +589,23 @@ def main(max_frames=None):
         state["position"][1] = jump.y
         update_trail(state)
 
-        # Collisions
+        # Collisions. A reset also shows a short message in the HUD, so the
+        # player learns *why* the worm jumped back to the start.
         if hits_water(state["position"], state["water_holes"],
                       WORM_RADIUS, WATER_HOLE_RADIUS):
             reset_player(state)
             reset_trail(state)
             jump = JumpState()
+            splash_msg = "SPLASH! A water hole sent the worm back to the start"
+            splash_until = time.time() + 2.5
 
         for bird in state["birds"]:
             if hits_bird(state["position"], bird["pos"]):
                 reset_player(state)
                 reset_trail(state)
                 jump = JumpState()
+                splash_msg = "A bird caught the worm - back to the start"
+                splash_until = time.time() + 2.5
                 break
 
         now = time.time()
@@ -720,6 +739,11 @@ def main(max_frames=None):
         ht = small_font.render(hint, True, hint_col)
         screen.blit(ht, (window_w // 2 - ht.get_width() // 2, 82))
 
+        # Hazards explain themselves for a couple of seconds after a reset.
+        if time.time() < splash_until and splash_msg:
+            sht = font.render(splash_msg, True, (255, 140, 90))
+            screen.blit(sht, (window_w // 2 - sht.get_width() // 2, 112))
+
         # ---- Bottom control bar (two compact lines, resize friendly) ----
         bar_h = 44
         screen.blit(hud["bottom"], (0, window_h - bar_h))
@@ -753,6 +777,7 @@ def main(max_frames=None):
 
 if __name__ == "__main__":
     main()
+
 
 
 

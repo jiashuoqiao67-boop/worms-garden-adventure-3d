@@ -67,10 +67,30 @@ def test_wall_box_dimensions():
     assert np.allclose(w_center, [2.0, WALL_HEIGHT / 2, 1.5])
 
 
+def test_water_disc_faces_up():
+    """Water pads must survive back-face culling: normal +Y.
+
+    The first build wound the fan the other way round, so every water disc was
+    culled and the player was teleported by an invisible trap.
+    """
+    from geometry import disc_mesh
+    disc = disc_mesh(0.26, (3.0, 0.03, 4.0))
+    a, b, c = disc.vertices[disc.triangles[0]]
+    normal = np.cross(b - a, c - a)
+    normal /= np.linalg.norm(normal)
+    assert normal[1] > 0.99
+    # ... and every triangle must agree.
+    for tri in disc.triangles:
+        p = disc.vertices[tri]
+        n = np.cross(p[1] - p[0], p[2] - p[0])
+        assert n[1] > 0
+
+
 if __name__ == "__main__":
     test_cube_topology()
     test_cube_placement()
     test_ground_grid()
     test_ground_normal_points_up()
     test_wall_box_dimensions()
+    test_water_disc_faces_up()
     print("M3 geometry tests OK")
