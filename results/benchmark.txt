@@ -1,8 +1,9 @@
-Performance benchmark (offscreen, perspective, overview view)
-frames/preset = 5
+Performance benchmark (offscreen, perspective, overview camera)
+same maze seed, camera and scene for every row
+frames/preset = 12 (after 1 warm-up frame)
 
-PRESET     RESOLUTION     TRIS   MEAN ms  MEDIAN ms     FPS
-FAST       819x512        7092    143.78     151.43     6.6
-BALANCED   1024x640       7092    135.11     135.64     7.4
-HIGH       1280x800       7092    159.83     158.92     6.3
-NATIVE     1280x800       7092     168.5     174.56     5.7
+PRESET     RESOLUTION       PIXELS   TRIS   MEAN ms  MEDIAN ms     FPS
+FAST       672x420          282240   6972     12.35      12.26    81.5
+BALANCED   1024x640         655360   6972     18.58       18.2    54.9
+HIGH       1600x1000       1600000   6972     34.41      34.47    29.0
+NATIVE     1280x800        1024000   6972     24.52      24.39    41.0

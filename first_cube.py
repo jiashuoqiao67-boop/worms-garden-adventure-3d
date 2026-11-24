@@ -36,8 +36,7 @@ def main():
     cube = unit_cube()
     angle = 0.0
     running = True
-    cam = Camera(eye=(3.0, 2.0, 3.0), target=(0, 0, 0),
-                 width=WIDTH, height=HEIGHT)
+    projection = "perspective"
 
     while running:
         dt = min(clock.tick(60) / 1000.0, 0.05)
@@ -47,12 +46,15 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
-                cam.toggle_projection()
+                projection = ("orthographic" if projection == "perspective"
+                              else "perspective")
 
-        # Orbiting elevated camera looking at the origin
+        # Orbiting elevated camera looking at the origin. A fresh Camera is
+        # built each frame so its cached basis follows the moving eye.
         eye = np.array([3.0 * math.sin(angle), 2.0,
                         3.0 * math.cos(angle)], dtype=float)
-        cam.eye = eye
+        cam = Camera(eye=eye, target=(0, 0, 0), width=WIDTH, height=HEIGHT,
+                     projection=projection)
 
         screen.fill((20, 24, 32))
 
@@ -64,7 +66,8 @@ def main():
                                  projected[i], projected[j], 2)
 
         # Debug overlay in screen space
-        mode = "PERSPECTIVE" if cam.projection == "perspective" else "ORTHOGRAPHIC"
+        mode = ("PERSPECTIVE" if cam.projection == "perspective"
+                else "ORTHOGRAPHIC")
         screen.blit(font.render(f"Projection: {mode}  (P to toggle)",
                                 True, (230, 230, 230)), (12, 10))
         screen.blit(font.render(f"Eye: ({eye[0]:.2f}, {eye[1]:.2f}, {eye[2]:.2f})",

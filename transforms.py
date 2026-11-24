@@ -1,4 +1,4 @@
-﻿"""
+"""
 Vectors and 4x4 homogeneous transforms (handbook chapter 5).
 
 Conventions:
@@ -60,6 +60,17 @@ def rotation_y(angle_rad):
         [c, 0.0, s, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [-s, 0.0, c, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ], dtype=float)
+
+
+def rotation_z(angle_rad):
+    """Rotate about the Z axis (used for the bird wing flap animation)."""
+    c, s = np.cos(angle_rad), np.sin(angle_rad)
+    return np.array([
+        [c, -s, 0.0, 0.0],
+        [s, c, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ], dtype=float)
 

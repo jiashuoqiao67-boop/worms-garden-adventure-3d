@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 venv/
 
+# Numba cache files
+*.nbi
+*.nbc
+
 # Editor / OS
 .vscode/*
 !.vscode/settings.json
@@ -12,7 +16,8 @@ venv/
 .DS_Store
 Thumbs.db
 
-# 本机环境修复备份（注册表），不属于课程代码
+# Local machine font-registry backup (not part of the course project)
 reference/registry_font_backup.json
 
-# 注：screenshots/ 与 tests/ 按手册 17.1 要求需要提交，不要忽略
+# NOTE: screenshots/, results/, report/ and tests/ ARE part of the submission
+# required by handbook section 17.1 - do not ignore them.

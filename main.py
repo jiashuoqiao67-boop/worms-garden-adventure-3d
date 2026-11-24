@@ -1,8 +1,9 @@
-﻿"""
+"""
 Worm's Garden Adventure 3D - main loop (handbook Appendix F2 / ch. 14).
 
 Stage 2 pipeline: update world -> render 3D scene into a NumPy framebuffer
--> blit to the Pygame window -> draw 2D HUD in screen space.
+(own software rasterizer + Z-buffer) -> blit to the Pygame window -> draw the
+2D HUD, minimap and debug overlays in screen space.
 
 Run:
     .venv/Scripts/python.exe main.py
@@ -12,8 +13,8 @@ import math
 import os
 import time
 
-import pygame
 import numpy as np
+import pygame
 
 from maze import (
     COLS, ROWS, WORM_RADIUS, WORM_SPEED,
@@ -24,8 +25,10 @@ from game import (
     check_finish, reset_player, complete_level, restart_run, APPLE_COUNT,
 )
 from geometry import (
-    ground_mesh, cube_mesh, wall_box_meshes, disc_mesh, worm_parts,
-    apple_parts, bird_parts, flag_mesh,
+    ground_mesh, lawn_mesh, maze_wall_meshes, disc_mesh, flag_mesh,
+    worm_head_mesh, worm_segment_mesh, WORM_SEGMENT_COUNT,
+    WORM_SEGMENT_SPACING, apple_parts, bird_parts, bird_wing_meshes,
+    merge_meshes,
 )
 from camera import Camera
 from renderer import Renderer
@@ -35,22 +38,26 @@ from physics import (
     hits_water, hits_bird, collects_apple,
 )
 from particles import spawn_spark, spawn_firework, update_particles
-from transforms import model_matrix
+from transforms import model_matrix, rotation_z
 
 WINDOW_W, WINDOW_H = 1280, 800
 
 # Internal render-resolution presets (handbook 14.5); target internal height.
 QUALITY_PRESETS = {
-    1: ("FAST", 512),
+    1: ("FAST", 420),
     2: ("BALANCED", 640),
-    3: ("HIGH", 800),
+    3: ("HIGH", 1000),
     4: ("NATIVE", None),
 }
 
 IDENTITY = model_matrix((1, 1, 1), 0.0, (0.0, 0.0, 0.0))
 
-# Part B extension 1: atmospheric depth fog configuration.
-FOG_CONFIG = {"color": np.array([182, 212, 226]), "near": 5.0, "far": 20.0}
+# Part B extension 1: atmospheric depth fog configuration. The range is tied to
+# the camera distance so the near corridor stays crisp while the far side of
+# the maze fades toward the sky colour.
+FOG_COLOR = np.array([184, 214, 228])
+MAZE_CENTER = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
+
 # Three-stop clear-sky backdrop (top -> mid -> low), matching the reference
 # garden look. SKY_BG keeps the low stop as the plain-colour fallback.
 SKY_TOP = (26, 62, 112)
@@ -58,6 +65,12 @@ SKY_MID = (92, 160, 212)
 SKY_LOW = (184, 214, 228)
 SKY_BG = SKY_LOW
 SKY_GRAD = (SKY_TOP, SKY_MID, SKY_LOW)
+
+# Track the worm's recent head positions so the body segments can follow an
+# older sample of that path (handbook 12.2 - a 3D animation).
+TRAIL_SPACING = 0.045
+WORM_SCALE = 1.25      # visual scale so the body matches its 0.22 collider
+TRAIL_MAX = 80
 
 
 def fit_buffer(window_w, window_h, target_h):
@@ -67,98 +80,331 @@ def fit_buffer(window_w, window_h, target_h):
     return w, target_h
 
 
-def make_camera(view_mode, worm_pos, projection, width, height, yaw=0.0):
-    if view_mode == 1:      # side
-        eye = np.array([COLS + 6.0, 4.0, ROWS / 2.0])
+FOG_MODES = ("OFF", "LIGHT", "HEAVY")
+FOG_DENSITY = (1.0, 1.0, 0.72)
+
+
+def fog_for_camera(camera, density=1.0):
+    """Depth-fog range derived from the camera distance (extension 1)."""
+    distance = float(np.linalg.norm(camera.eye - MAZE_CENTER))
+    far = min(48.0, max(10.0, 1.6 * distance)) * density
+    return {"color": FOG_COLOR, "near": 0.45 * far, "far": far}
+
+
+def _orbit_eye(eye, target, yaw, zoom):
+    """Rotate the eye about the world Y axis around the target and dolly."""
+    offset = np.asarray(eye, dtype=float) - np.asarray(target, dtype=float)
+    if abs(yaw) > 1e-6:
+        c, s = math.cos(yaw), math.sin(yaw)
+        x, z = offset[0], offset[2]
+        offset = np.array([c * x + s * z, offset[1], -s * x + c * z])
+    offset = offset * zoom
+    eye = np.asarray(target, dtype=float) + offset
+    # Never let the camera drop through the garden floor.
+    if eye[1] < 0.45:
+        eye[1] = 0.45
+    return eye
+
+
+def make_camera(view_mode, worm_pos, projection, width, height,
+                orbit=0.0, zoom=1.0):
+    """Camera presets (handbook 7.5): 1 overview, 2 side, 3 follow."""
+    if view_mode == 1:      # elevated side view from the east edge
+        eye = np.array([COLS + 8.0, 6.5, ROWS * 0.75])
+        target = np.array([COLS * 0.45, 0.0, ROWS * 0.5])
+    elif view_mode == 2:    # third-person chase cam behind the worm
+        back, cam_height, look = 2.1, 3.3, 1.1
+        eye = np.asarray(worm_pos, dtype=float) + np.array([0.0, cam_height,
+                                                            back])
+        target = np.asarray(worm_pos, dtype=float) + np.array([0.0, 0.35,
+                                                               -look])
+    else:                   # elevated overview of the whole maze
+        eye = np.array([COLS / 2.0, 12.0, ROWS + 4.0])
         target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
-    elif view_mode == 2:    # third-person chase cam: fixed north-up heading,
-        # camera sits behind (+Z) and above the worm, looking ahead (-Z). The
-        # maze never spins, matching the reference follow view.
-        back, cam_height, look = 3.8, 3.6, 2.0
-        eye = worm_pos + np.array([0.0, cam_height, back])
-        target = worm_pos + np.array([0.0, 0.3, -look])
-        return Camera(eye=eye, target=target, projection=projection,
-                      width=width, height=height)
-    else:                   # elevated overview
-        eye = np.array([COLS / 2.0, 13.0, ROWS + 6.0])
-        target = np.array([COLS / 2.0, 0.0, ROWS / 2.0])
+    eye = _orbit_eye(eye, target, orbit, zoom)
+    if projection == "orthographic":
+        # Parallel rays start on a plane through the eye: if that plane dips
+        # below the floor, the bottom of the orthographic image samples below
+        # the ground and shows the sky. Lifting the eye keeps the same aim
+        # (target) while making the screen plane steeper than the floor.
+        eye = eye.copy()
+        eye[1] = max(eye[1] + 6.0, 9.0)
+        pixels_per_unit = max(24.0, min(width / (COLS + 4.0),
+                                        height / (ROWS + 4.0)))
+    else:
+        pixels_per_unit = 45.0
     return Camera(eye=eye, target=target, projection=projection,
-                  width=width, height=height)
+                  width=width, height=height,
+                  pixels_per_unit=pixels_per_unit)
 
 
-def build_wall_meshes(state):
-    """Return [(side_mesh, top_mesh), ...]; side carries the grey wall face,
-    top carries the green wall-cap material."""
-    return [wall_box_meshes(center, size) for center, size in state["wall_boxes"]]
+# ---------------------------------------------------------------------------
+# Scene assembly
+# ---------------------------------------------------------------------------
+
+def build_materials():
+    return {
+        "grass": Material(base_color=(236, 242, 234),
+                          texture=make_grass_texture(96)),
+        "lawn": Material(base_color=(228, 236, 226),
+                         texture=make_grass_texture(96)),
+        "stone": Material(base_color=(255, 250, 242),
+                          texture=make_stone_texture(64)),
+        "walltop": Material(base_color=(104, 168, 92)),
+        "water": Material(base_color=(30, 140, 198)),
+        "flag": Material(base_color=(46, 226, 122)),
+        "red": Material(base_color=(214, 44, 54)),
+        "gold": Material(base_color=(250, 186, 34)),
+        "bird": Material(base_color=(66, 56, 96)),
+        "belly": Material(base_color=(205, 200, 188)),
+        "worm": Material(base_color=(150, 236, 118)),
+        "stem": Material(base_color=(96, 60, 32)),
+        "beak": Material(base_color=(255, 184, 64)),
+        "leaf": Material(base_color=(58, 148, 58)),
+        "eye": Material(base_color=(12, 12, 14)),
+    }
 
 
-def build_static_meshes(state):
-    """Static placements that do not move during a run: water-hole discs and
-    the two flags. Built once per level instead of every frame."""
-    pads = [disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.03, hole[1]))
-            for hole in state["water_holes"]]
+def build_static_scene(state):
+    """Merge the immovable level geometry into a few big meshes.
+
+    Ground + surrounding lawn, all wall faces, all wall caps, the water pads
+    and the two flags are rebuilt only when a level is generated, so a frame
+    needs six draw calls for the whole static world.
+    """
+    ground = ground_mesh(COLS, ROWS, uv_per_unit=0.5)
+    lawn = lawn_mesh(COLS, ROWS, margin=60.0, step=8.0, uv_per_unit=0.5)
+    wall_sides, wall_tops = maze_wall_meshes(state["maze"], COLS, ROWS)
+    pads = merge_meshes([
+        disc_mesh(WATER_HOLE_RADIUS, (hole[0], 0.02, hole[1]))
+        for hole in state["water_holes"]
+    ])
     start_flag = flag_mesh(cell_center_3d(START_CELL[0], START_CELL[1], 0.0))
     finish_flag = flag_mesh(cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], 0.0))
-    return pads, start_flag, finish_flag
+    return {
+        "ground": ground,
+        "lawn": lawn,
+        "wall_sides": wall_sides,
+        "wall_tops": wall_tops,
+        "pads": pads,
+        "start_flag": start_flag,
+        "finish_flag": finish_flag,
+        "triangles": (len(ground.triangles) + len(lawn.triangles)
+                      + len(wall_sides.triangles)
+                      + len(wall_tops.triangles) + len(pads.triangles)
+                      + len(start_flag.triangles)
+                      + len(finish_flag.triangles)),
+    }
 
 
-def draw_minimap(screen, state, window_w, window_h, tiny_font):
-    """Bottom-right corridor map: wall blocks, apples, birds, worm and exit."""
-    mw, mh = 246, 168
-    mx, my = window_w - mw - 22, window_h - mh - 22
+def draw_static(renderer, cam, scene, mats):
+    # Draw the nearest, most occluding surfaces first: later fragments then
+    # fail the Z-buffer test before their texture is sampled (early-Z).
+    renderer.draw_mesh(cam, scene["wall_sides"], IDENTITY, mats["stone"])
+    renderer.draw_mesh(cam, scene["wall_tops"], IDENTITY, mats["walltop"])
+    renderer.draw_mesh(cam, scene["pads"], IDENTITY, mats["water"])
+    renderer.draw_mesh(cam, scene["start_flag"], IDENTITY, mats["flag"])
+    renderer.draw_mesh(cam, scene["finish_flag"], IDENTITY, mats["red"])
+    renderer.draw_mesh(cam, scene["ground"], IDENTITY, mats["grass"])
+    renderer.draw_mesh(cam, scene["lawn"], IDENTITY, mats["lawn"])
+
+
+def update_trail(state):
+    """Push the newest head position and keep only a short history."""
+    trail = state.setdefault("trail", [])
+    head = np.asarray(state["position"], dtype=float)
+    if not trail or np.linalg.norm(head - trail[0]) >= TRAIL_SPACING * 0.5:
+        trail.insert(0, head.copy())
+        del trail[TRAIL_MAX:]
+
+
+def reset_trail(state):
+    """Drop the recorded path (after a respawn or a new level)."""
+    state["trail"] = [np.asarray(state["position"], dtype=float).copy()]
+
+
+def trail_point(trail, distance, fallback_dir):
+    """Point `distance` behind the head along the recorded path."""
+    if not trail:
+        return np.asarray(fallback_dir, dtype=float)
+    acc = 0.0
+    prev = trail[0]
+    for point in trail[1:]:
+        segment = point - prev
+        seg_len = float(np.linalg.norm(segment))
+        if seg_len < 1e-6:
+            continue
+        if acc + seg_len >= distance:
+            f = (distance - acc) / seg_len
+            return prev + segment * f
+        acc += seg_len
+        prev = point
+    # Not enough history yet: extrapolate behind the oldest sample.
+    if len(trail) >= 2:
+        direction = trail[-2] - trail[-1]
+        n = np.linalg.norm(direction)
+        if n > 1e-6:
+            return trail[-1] + direction / n * max(0.0, distance - acc)
+    return trail[-1].copy()
+
+
+def draw_worm(renderer, cam, state, mats, t, worm_yaw):
+    """Head plus body segments trailing along the recorded path (12.2)."""
+    trail = state.get("trail") or [np.asarray(state["position"], dtype=float)]
+    forward = np.array([math.sin(worm_yaw), 0.0, math.cos(worm_yaw)])
+    head_pos = np.asarray(state["position"], dtype=float)
+    bob = 0.006 * math.sin(7.0 * t)
+    geo = cached_geometry()
+    renderer.draw_mesh(cam, geo["worm_head"],
+                       model_matrix((WORM_SCALE,) * 3, worm_yaw,
+                                    head_pos + np.array([0.0, bob, 0.0])),
+                       mats["worm"])
+    for i in range(WORM_SEGMENT_COUNT):
+        dist = WORM_SEGMENT_SPACING * (i + 1)
+        pos = trail_point(trail, dist, head_pos - forward * dist)
+        ahead = trail_point(trail, max(0.0, dist - 0.08), pos)
+        behind = trail_point(trail, dist + 0.08, pos)
+        tangent = ahead - behind
+        yaw = math.atan2(tangent[0], tangent[2]) if np.linalg.norm(
+            tangent) > 1e-6 else worm_yaw
+        pos = pos + np.array([0.0, 0.004 * math.sin(7.0 * t - i), 0.0])
+        renderer.draw_mesh(cam, geo["worm_segments"][i],
+                           model_matrix((WORM_SCALE,) * 3, yaw, pos),
+                           mats["worm"])
+
+
+_GEOM_CACHE = {}
+
+
+def cached_geometry():
+    """Build the low-poly character meshes once (level-independent, local)."""
+    if not _GEOM_CACHE:
+        _GEOM_CACHE["apple"] = apple_parts()
+        _GEOM_CACHE["bird"] = bird_parts()
+        _GEOM_CACHE["wings"] = bird_wing_meshes()
+        _GEOM_CACHE["worm_head"] = worm_head_mesh()
+        _GEOM_CACHE["worm_segments"] = [worm_segment_mesh(i)
+                                        for i in range(WORM_SEGMENT_COUNT)]
+    return _GEOM_CACHE
+
+
+def draw_apples(renderer, cam, state, mats, t):
+    parts = cached_geometry()["apple"]
+    for apple in state["apples"]:
+        if apple["collected"]:
+            continue
+        fruit_mat = mats["gold"] if apple["value"] == 100 else mats["red"]
+        role_mat = {"fruit": fruit_mat, "stem": mats["stem"],
+                    "leaf": mats["leaf"]}
+        model = model_matrix((1.0, 1.0, 1.0), 0.0,
+                             apple_world_pos(apple, t))
+        for mesh, role in parts:
+            renderer.draw_mesh(cam, mesh, model, role_mat[role])
+
+
+def draw_birds(renderer, cam, state, mats, t):
+    parts = cached_geometry()["bird"]
+    wing_left, wing_right = cached_geometry()["wings"]
+    for bird in state["birds"]:
+        model = model_matrix((1.0, 1.0, 1.0), bird["yaw"], bird["pos"])
+        for mesh, role in parts:
+            renderer.draw_mesh(cam, mesh, model, mats[role])
+        # Wing flap: rotate each wing about the body axis with a sine wave.
+        flap = 0.85 * math.sin(9.0 * t + bird.get("phase", 0.0))
+        renderer.draw_mesh(cam, wing_left, model @ rotation_z(flap),
+                           mats["bird"])
+        renderer.draw_mesh(cam, wing_right, model @ rotation_z(-flap),
+                           mats["bird"])
+
+
+def particle_dots(renderer, cam, particles):
+    """Project particles and hide the ones behind opaque geometry (13.1)."""
+    dots = []
+    for p in particles:
+        depth = float(cam.to_camera_space(p["pos"])[2])
+        if depth <= cam.near:
+            continue
+        screen = cam.project_cam(cam.to_camera_space(p["pos"]))
+        if screen is None:
+            continue
+        px, py = int(screen[0]), int(screen[1])
+        if not (0 <= px < renderer.width and 0 <= py < renderer.height):
+            continue
+        if depth > renderer.depthbuf[py, px] + 0.02:
+            continue        # occluded by a wall / the ground
+        size = max(1, int(round(p["size"] * 3.2 / max(0.7, depth))))
+        dots.append((p["color"], size, screen))
+    return dots
+
+
+# ---------------------------------------------------------------------------
+# HUD
+# ---------------------------------------------------------------------------
+
+def draw_minimap(screen, state, window_w, window_h, font, bottom_bar=44):
+    """Bottom-right corridor map: walls, apples, birds, worm, start and exit.
+
+    The handbook camera basis maps world +X onto screen left, so the map is
+    drawn with the same handedness as the 3D view (the worm dot then moves in
+    the same direction as the keys).
+    """
+    mh = min(172, window_h // 3)
+    mw = min(250, window_w // 2)
+    mx, my = window_w - mw - 22, window_h - mh - bottom_bar - 30
     panel = pygame.Surface((mw, mh), pygame.SRCALPHA)
-    pygame.draw.rect(panel, (8, 16, 24, 168), panel.get_rect(),
+    pygame.draw.rect(panel, (8, 16, 24, 170), panel.get_rect(),
                      border_radius=12)
     pygame.draw.rect(panel, (120, 190, 150, 90), panel.get_rect(), 1,
                      border_radius=12)
     screen.blit(panel, (mx, my))
 
-    ox, oy = mx + 12, my + 18
+    ox, oy = mx + 12, my + 20
     sx = (mw - 24) / COLS
-    sy = (mh - 30) / ROWS
+    sy = (mh - 34) / ROWS
 
     def mp(x, z):
-        return (ox + x * sx, oy + z * sy)
+        return (ox + (COLS - x) * sx, oy + z * sy)
 
-    # Wall blocks from the cached wall boxes (centre + size -> min/max).
     for center, size in state["wall_boxes"]:
-        x0, z0 = center[0] - size[0] / 2.0, center[2] - size[2] / 2.0
-        x1, z1 = center[0] + size[0] / 2.0, center[2] + size[2] / 2.0
-        p0, p1 = mp(x0, z0), mp(x1, z1)
+        x0 = center[0] - size[0] / 2.0
+        z0 = center[2] - size[2] / 2.0
+        x1 = center[0] + size[0] / 2.0
+        z1 = center[2] + size[2] / 2.0
+        p0, p1 = mp(x1, z0), mp(x0, z1)
         pygame.draw.rect(screen, (86, 118, 96),
                          pygame.Rect(p0[0], p0[1],
                                      max(1, p1[0] - p0[0]),
                                      max(1, p1[1] - p0[1])))
-    # Apples: red ruby / gold medal.
     for apple in state["apples"]:
         if apple["collected"]:
             continue
-        c = apple["cell"]
-        p = mp(c[0] + 0.5, c[1] + 0.5)
-        col = (250, 186, 34) if apple["value"] == 100 else (212, 40, 52)
-        pygame.draw.circle(screen, col, (int(p[0]), int(p[1])), 3)
-    # Birds (dark violet).
+        p = mp(apple["cell"][0] + 0.5, apple["cell"][1] + 0.5)
+        color = (250, 186, 34) if apple["value"] == 100 else (212, 40, 52)
+        pygame.draw.circle(screen, color, (int(p[0]), int(p[1])), 3)
     for bird in state["birds"]:
         p = mp(bird["pos"][0], bird["pos"][2])
         pygame.draw.circle(screen, (150, 130, 190),
                            (int(p[0]), int(p[1])), 3)
-    # Exit marker (checkered finish) and start flag.
     pf = mp(FINISH_CELL[0] + 0.5, FINISH_CELL[1] + 0.5)
     pygame.draw.rect(screen, (255, 240, 240),
                      pygame.Rect(int(pf[0] - 3), int(pf[1] - 3), 6, 6))
     ps = mp(START_CELL[0] + 0.5, START_CELL[1] + 0.5)
     pygame.draw.circle(screen, (46, 226, 122), (int(ps[0]), int(ps[1])), 3)
-    # Player worm.
     pp = mp(state["position"][0], state["position"][2])
     pygame.draw.circle(screen, (120, 255, 150), (int(pp[0]), int(pp[1])), 3)
     pygame.draw.circle(screen, (12, 20, 28), (int(pp[0]), int(pp[1])), 4, 1)
-    screen.blit(tiny_font.render("MAP", True, (170, 220, 190)),
+    screen.blit(font.render("MAP", True, (170, 220, 190)),
                 (mx + 14, my + 5))
 
 
 def main(max_frames=None):
     pygame.init()
-    window_w, window_h = WINDOW_W, WINDOW_H
+    window_env = os.environ.get("MAIN_WINDOW")
+    if window_env:
+        win_w, win_h = (int(v) for v in window_env.lower().split("x"))
+    else:
+        win_w, win_h = WINDOW_W, WINDOW_H
+    window_w, window_h = win_w, win_h
     screen = pygame.display.set_mode((window_w, window_h), pygame.RESIZABLE)
     pygame.display.set_caption("Worm's Garden Adventure 3D")
     clock = pygame.time.Clock()
@@ -166,45 +412,43 @@ def main(max_frames=None):
     small_font = pygame.font.SysFont("Arial", 16)
     tiny_font = pygame.font.SysFont("Arial", 13)
 
-    # Materials (palette matched to the garden-ruin reference: mossy green
-    # wall tops over warm weathered stone, bright green worm, dark violet bird).
-    grass_mat = Material(base_color=(54, 118, 70),
-                         texture=make_grass_texture(64))
-    stone_mat = Material(base_color=(172, 166, 154),
-                         texture=make_stone_texture(64))
-    walltop_mat = Material(base_color=(92, 152, 80))
-    worm_mat = Material(base_color=(86, 206, 118))
-    red_mat = Material(base_color=(212, 40, 52))
-    gold_mat = Material(base_color=(250, 186, 34))
-    bird_mat = Material(base_color=(58, 50, 84))
-    belly_mat = Material(base_color=(205, 200, 188))
-    water_mat = Material(base_color=(24, 134, 192))
-    flag_mat = Material(base_color=(46, 226, 122))
-    stem_mat = Material(base_color=(96, 60, 32))
-    beak_mat = Material(base_color=(255, 184, 64))
-    leaf_mat = Material(base_color=(58, 148, 58))
-    eye_mat = Material(base_color=(12, 12, 14))
-
+    mats = build_materials()
     state = build_level(1, seed=12)
-    wall_meshes = build_wall_meshes(state)
-    water_pads, start_flag, finish_flag = build_static_meshes(state)
-    ground = ground_mesh(COLS, ROWS)
+    reset_trail(state)
+    scene = build_static_scene(state)
     jump = JumpState()
     particles = []
 
-    view_mode = 2
-    projection = "perspective"
+    view_mode = int(os.environ.get("MAIN_VIEW", "2"))
+    projection = os.environ.get("MAIN_PROJECTION", "perspective")
     worm_yaw = 0.0
-    quality = 2
-    fog_enabled = False
-    bilinear = True
+    quality = int(os.environ.get("MAIN_QUALITY", "2"))
+    fog_mode = int(os.environ.get("MAIN_FOG", "0")) % 3
+    fog_enabled = fog_mode != 0
+    bilinear = False           # Part A default sampler is nearest-neighbour
+    wireframe = os.environ.get("MAIN_WIRE", "0") == "1"
+    depth_view = os.environ.get("MAIN_DEPTH", "0") == "1"
+    if os.environ.get("MAIN_BILINEAR", "0") == "1":
+        bilinear = True
+        mats["grass"].filter_mode = "bilinear"
+        mats["stone"].filter_mode = "bilinear"
+    # Screenshot / demo hook: start the worm on a chosen cell.
+    start_cell_env = os.environ.get("MAIN_WORM")
+    if start_cell_env:
+        col, row = (int(v) for v in start_cell_env.split(","))
+        state["position"] = cell_center_3d(col, row, jump.y)
+        reset_trail(state)
+    orbit_yaw = 0.0
+    zoom = 1.0
     spark_timer = 0.0
     start_time = time.time()
     render_ms = 0.0
     triangle_count = 0
     renderer = None
+    cam = None
+    shot_path = os.environ.get("MAIN_SHOT")
     # Smoothed chase-camera pose (eye, target); None until the follow view
-    # first activates. Exponential damping gives the reference's soft follow.
+    # first activates. Exponential damping gives the reference soft follow.
     cam_smooth = None
 
     running = True
@@ -217,55 +461,79 @@ def main(max_frames=None):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.VIDEORESIZE:
-                # Keep the internal framebuffer aspect ratio tied to the window;
-                # the camera projection uses the new buffer width/height.
-                window_w, window_h = event.w, event.h
+            elif event.type == pygame.VIDEORESIZE:
+                # Keep the internal framebuffer aspect ratio tied to the
+                # window; the projection uses the new buffer size.
+                window_w, window_h = max(640, event.w), max(400, event.h)
                 screen = pygame.display.set_mode((window_w, window_h),
                                                  pygame.RESIZABLE)
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_p:
-                    projection = ("orthographic"
-                                  if projection == "perspective" else "perspective")
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                elif event.key == pygame.K_p:
+                    projection = ("orthographic" if projection == "perspective"
+                                  else "perspective")
                 elif event.key == pygame.K_1:
                     view_mode = 0
                 elif event.key == pygame.K_2:
                     view_mode = 1
                 elif event.key == pygame.K_3:
                     view_mode = 2
+                elif event.key == pygame.K_F1:
+                    wireframe = not wireframe
+                elif event.key == pygame.K_F3:
+                    depth_view = not depth_view
                 elif event.key == pygame.K_F5:
                     quality = quality % 4 + 1
                 elif event.key == pygame.K_r:
                     state = restart_run(state)
-                    wall_meshes = build_wall_meshes(state)
-                    water_pads, start_flag, finish_flag = build_static_meshes(state)
+                    reset_trail(state)
+                    scene = build_static_scene(state)
                     jump = JumpState()
                     particles.clear()
+                    cam_smooth = None
                     start_time = time.time()
                 elif event.key == pygame.K_SPACE:
                     request_jump(jump)
                 elif event.key == pygame.K_f:
-                    fog_enabled = not fog_enabled
+                    fog_mode = (fog_mode + 1) % 3
+                    fog_enabled = fog_mode != 0
                 elif event.key == pygame.K_t:
                     bilinear = not bilinear
                     mode = "bilinear" if bilinear else "nearest"
-                    grass_mat.filter_mode = mode
-                    stone_mat.filter_mode = mode
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                spawn_firework(particles, state["position"])
+                    mats["grass"].filter_mode = mode
+                    mats["stone"].filter_mode = mode
+            elif event.type == pygame.MOUSEWHEEL:
+                zoom = min(1.8, max(0.55, zoom * math.exp(-event.y * 0.1)))
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # 3D click rule (handbook 13.2): cast the pixel ray onto the
+                # ground plane and burst there.
+                if cam is not None and renderer is not None:
+                    mx, my = event.pos
+                    gx = mx * renderer.width / max(1, window_w)
+                    gy = my * renderer.height / max(1, window_h)
+                    hit = cam.ground_hit(gx, gy, ground_y=0.05)
+                    if hit is not None:
+                        spawn_firework(particles, hit)
 
         keys = pygame.key.get_pressed()
+        # Continuous camera orbit (Q / E) and dolly are applied to every
+        # preset; the zoom is clamped so the camera cannot enter the geometry.
+        if keys[pygame.K_q]:
+            orbit_yaw -= 1.6 * dt
+        if keys[pygame.K_e]:
+            orbit_yaw += 1.6 * dt
         direction = np.array([0.0, 0.0, 0.0])
         if keys[pygame.K_w] or keys[pygame.K_UP]:
             direction[2] -= 1.0   # N = -Z
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             direction[2] += 1.0   # S = +Z
-        # Under the handbook camera basis the overview/follow view puts world
-        # -X on the screen right, so swap the X mapping to match screen intuition.
+        # The camera basis puts world +X on the screen left (handbook 7.2),
+        # so A/D are mapped to the world direction that matches the screen.
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            direction[0] += 1.0   # screen left
+            direction[0] += 1.0
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            direction[0] -= 1.0   # screen right
+            direction[0] -= 1.0
 
         # ---------------- Update world ----------------
         if np.linalg.norm(direction) > 0:
@@ -279,22 +547,26 @@ def main(max_frames=None):
 
         update_jump(jump, dt)
         state["position"][1] = jump.y
+        update_trail(state)
 
         # Collisions
         if hits_water(state["position"], state["water_holes"],
                       WORM_RADIUS, WATER_HOLE_RADIUS):
             reset_player(state)
+            reset_trail(state)
             jump = JumpState()
 
         for bird in state["birds"]:
             if hits_bird(state["position"], bird["pos"]):
                 reset_player(state)
+                reset_trail(state)
                 jump = JumpState()
                 break
 
+        now = time.time()
         for apple in state["apples"]:
             if not apple["collected"] and collects_apple(
-                    state["position"], apple_world_pos(apple, time.time())):
+                    state["position"], apple_world_pos(apple, now)):
                 collect_apple(state, apple)
 
         update_birds(state, dt)
@@ -302,113 +574,67 @@ def main(max_frames=None):
 
         if check_finish(state):
             state = complete_level(state)
-            wall_meshes = build_wall_meshes(state)
-            water_pads, start_flag, finish_flag = build_static_meshes(state)
+            reset_trail(state)
+            scene = build_static_scene(state)
             jump = JumpState()
             particles.clear()
 
         # ---------------- Render 3D scene ----------------
         label, target_h = QUALITY_PRESETS[quality]
         buf_w, buf_h = fit_buffer(window_w, window_h, target_h)
-        fog_cfg = FOG_CONFIG if fog_enabled else None
-        if renderer is None or (renderer.width, renderer.height) != (buf_w, buf_h):
-            renderer = Renderer(buf_w, buf_h, fog=fog_cfg, background=SKY_BG,
+        fog_cfg = None
+        if renderer is None or (renderer.width, renderer.height) != (buf_w,
+                                                                     buf_h):
+            renderer = Renderer(buf_w, buf_h, background=SKY_BG,
                                 sky_grad=SKY_GRAD)
-        else:
-            renderer.fog = fog_cfg
-        # Range cull only for the chase camera; overview/side keep every wall.
-        renderer.cull_distance = (view_mode == 2)
-        renderer.clear()
         if view_mode == 2:
-            # Third-person chase cam with exponential smoothing. The target
-            # pose follows the worm behind and above; the stored pose eases
-            # toward it each frame (reference-style soft follow).
-            wp = state["position"]
-            tgt_eye = wp + np.array([0.0, 3.6, 3.8])
-            tgt_target = wp + np.array([0.0, 0.3, -2.0])
+            # Third-person chase cam with exponential smoothing.
+            target_pose = make_camera(2, state["position"], projection,
+                                      buf_w, buf_h, orbit_yaw, zoom)
             if cam_smooth is None:
-                s_eye, s_target = tgt_eye.copy(), tgt_target.copy()
+                s_eye, s_target = target_pose.eye.copy(), target_pose.target.copy()
             else:
                 k = 1.0 - math.exp(-dt * 6.5)
-                s_eye = cam_smooth[0] + (tgt_eye - cam_smooth[0]) * k
-                s_target = cam_smooth[1] + (tgt_target - cam_smooth[1]) * k
+                s_eye = cam_smooth[0] + (target_pose.eye - cam_smooth[0]) * k
+                s_target = (cam_smooth[1]
+                            + (target_pose.target - cam_smooth[1]) * k)
             cam_smooth = (s_eye, s_target)
             cam = Camera(eye=s_eye, target=s_target, projection=projection,
                          width=buf_w, height=buf_h)
         else:
             cam_smooth = None
             cam = make_camera(view_mode, state["position"], projection,
-                              buf_w, buf_h, yaw=worm_yaw)
+                              buf_w, buf_h, orbit_yaw, zoom)
+
+        renderer.fog = (fog_for_camera(cam, FOG_DENSITY[fog_mode])
+                        if fog_mode else None)
+        renderer.wireframe = wireframe
+        renderer.clear()
 
         t0 = time.perf_counter()
-        tri_total = len(ground.triangles) + sum(
-            len(s.triangles) + len(t.triangles) for s, t in wall_meshes)
-        renderer.draw_mesh(cam, ground, IDENTITY, grass_mat)
-        for side, top in wall_meshes:
-            renderer.draw_mesh(cam, side, IDENTITY, stone_mat)
-            renderer.draw_mesh(cam, top, IDENTITY, walltop_mat)
-
-        # Water holes (flat blue discs on the ground) and flags: cached once.
-        for pad in water_pads:
-            tri_total += len(pad.triangles)
-            renderer.draw_mesh(cam, pad, IDENTITY, water_mat)
-
-        tri_total += len(start_flag.triangles) + len(finish_flag.triangles)
-        renderer.draw_mesh(cam, start_flag, IDENTITY, flag_mat)
-        renderer.draw_mesh(cam, finish_flag, IDENTITY, red_mat)
-
-        # Apples
-        t = time.time()
-        for apple in state["apples"]:
-            if apple["collected"]:
-                continue
-            fruit_mat = gold_mat if apple["value"] == 100 else red_mat
-            role_mat = {"fruit": fruit_mat, "stem": stem_mat, "leaf": leaf_mat}
-            apple_model = model_matrix((1.0, 1.0, 1.0), 0.0,
-                                       apple_world_pos(apple, t))
-            for mesh, role in apple_parts():
-                tri_total += len(mesh.triangles)
-                renderer.draw_mesh(cam, mesh, apple_model, role_mat[role])
-
-        # Birds
-        bird_role_mat = {"bird": bird_mat, "belly": belly_mat,
-                         "beak": beak_mat, "eye": eye_mat}
-        for bird in state["birds"]:
-            bird_model = model_matrix((1.0, 1.0, 1.0), bird["yaw"],
-                                       bird["pos"])
-            for mesh, role in bird_parts():
-                tri_total += len(mesh.triangles)
-                renderer.draw_mesh(cam, mesh, bird_model, bird_role_mat[role])
-
-        # Worm
-        worm_role_mat = {"worm": worm_mat, "eye": eye_mat}
-        worm_model = model_matrix((1.0, 1.0, 1.0), worm_yaw,
-                                  state["position"])
-        for mesh, role in worm_parts():
-            tri_total += len(mesh.triangles)
-            renderer.draw_mesh(cam, mesh, worm_model, worm_role_mat[role])
-
-        # Project particles; draw them after the framebuffer is blitted.
-        particle_dots = []
-        for p in particles:
-            sp = cam.project(p["pos"])
-            if sp is not None:
-                particle_dots.append((p["color"], p["size"], sp))
+        draw_static(renderer, cam, scene, mats)
+        draw_apples(renderer, cam, state, mats, now)
+        draw_birds(renderer, cam, state, mats, now)
+        draw_worm(renderer, cam, state, mats, now, worm_yaw)
+        dots = particle_dots(renderer, cam, particles)
         render_ms = (time.perf_counter() - t0) * 1000.0
-
-        triangle_count = tri_total
+        triangle_count = renderer.stats["submitted"]
 
         # ---------------- Blit framebuffer + HUD ----------------
-        surface = renderer.surface()
+        if depth_view:
+            frame_src = renderer.depth_image()
+        else:
+            frame_src = renderer.surface()
         frame = pygame.surfarray.make_surface(
-            np.ascontiguousarray(surface).transpose(1, 0, 2))
+            np.ascontiguousarray(frame_src).transpose(1, 0, 2))
         frame = pygame.transform.smoothscale(frame, (window_w, window_h))
         screen.blit(frame, (0, 0))
 
-        for color, size, sp in particle_dots:
-            pygame.draw.circle(screen, color,
-                               (int(sp[0] * window_w / buf_w),
-                                int(sp[1] * window_h / buf_h)), size)
+        sx = window_w / buf_w
+        sy = window_h / buf_h
+        for color, size, sp in dots:
+            pygame.draw.circle(screen, color, (int(sp[0] * sx),
+                                               int(sp[1] * sy)), size)
 
         elapsed = time.time() - start_time
         mm, ss = int(elapsed // 60), int(elapsed % 60)
@@ -429,14 +655,16 @@ def main(max_frames=None):
             screen.blit(fnt.render(txt, True, color), pos)
 
         _text(f"LEVEL {state['level']}", (245, 248, 255), (40, 26))
-        _text(f"SCORE {state['score']}", (255, 200, 60), (190, 26))
+        _text(f"SCORE {state['score']}", (255, 200, 60),
+              (int(window_w * 0.16), 26))
         _text(f"APPLES {state['collected']}/{APPLE_COUNT}",
-              (255, 140, 140), (350, 26))
-        _text(f"TIME {mm:02d}:{ss:02d}", (245, 248, 255), (550, 26))
-        fps_col = (150, 240, 170) if dt < 0.021 else (255, 170, 120)
-        _text(f"{int(fps)} FPS", fps_col, (760, 29), small_font)
+              (255, 140, 140), (int(window_w * 0.30), 26))
+        _text(f"TIME {mm:02d}:{ss:02d}", (245, 248, 255),
+              (int(window_w * 0.46), 26))
+        fps_col = (150, 240, 170) if dt < 0.03 else (255, 170, 120)
+        _text(f"{int(fps)} FPS", fps_col, (int(window_w * 0.62), 29),
+              small_font)
 
-        # ---- Central unlock hint ----
         if state["collected"] < APPLE_COUNT:
             hint = f"Collect all {APPLE_COUNT} apples to unlock the checkered exit"
             hint_col = (255, 200, 60)
@@ -448,28 +676,37 @@ def main(max_frames=None):
                     (window_w // 2 - ht.get_width() // 2 + 1, 83))
         screen.blit(ht, (window_w // 2 - ht.get_width() // 2, 82))
 
-        # ---- Bottom control bar ----
-        bottom = pygame.Surface((window_w, 30), pygame.SRCALPHA)
-        pygame.draw.rect(bottom, (10, 26, 18, 170), bottom.get_rect())
-        screen.blit(bottom, (0, window_h - 30))
-        _text("WASD / ARROWS  MOVE     SPACE  JUMP     CLICK  FIREWORKS     "
-              "P  PROJECTION     R  RESTART",
-              (220, 238, 228), (40, window_h - 26), small_font)
+        # ---- Bottom control bar (two compact lines, resize friendly) ----
+        bar_h = 44
+        bottom = pygame.Surface((window_w, bar_h), pygame.SRCALPHA)
+        pygame.draw.rect(bottom, (10, 26, 18, 180), bottom.get_rect())
+        screen.blit(bottom, (0, window_h - bar_h))
+        _text("WASD MOVE   SPACE JUMP   CLICK FIREWORK   P PROJECTION   "
+              "1/2/3 CAMERA   Q/E ORBIT   WHEEL ZOOM",
+              (220, 238, 228), (24, window_h - 39), tiny_font)
+        _text("F FOG   T FILTER   F1 WIREFRAME   F3 DEPTH   F5 QUALITY   "
+              "R RESTART   ESC QUIT",
+              (196, 214, 204), (24, window_h - 21), tiny_font)
 
-        # ---- Renderer debug line (small, bottom-left above the bar) ----
+        # ---- Renderer debug line (projection, view, buffer, cost, eye) ----
+        mode = "WIREFRAME" if wireframe else (
+            "DEPTH" if depth_view else "SHADED")
         _text(f"{projection.upper()}  |  VIEW {view_mode + 1}  |  "
               f"{label} {buf_w}x{buf_h}  |  {render_ms:.1f} ms  |  "
-              f"{triangle_count} tris  |  FOG {'ON' if fog_enabled else 'OFF'}  |  "
-              f"FILTER {'BILINEAR' if bilinear else 'NEAREST'}",
-              (170, 190, 180), (15, window_h - 48), tiny_font)
+              f"{triangle_count} tris  |  "
+              f"EYE ({cam.eye[0]:.1f}, {cam.eye[1]:.1f}, {cam.eye[2]:.1f})  |  "
+              f"FOG {FOG_MODES[fog_mode]}  |  "
+              f"FILTER {'BILINEAR' if bilinear else 'NEAREST'}  |  {mode}",
+              (170, 190, 180), (15, window_h - bar_h - 20), tiny_font)
 
-        draw_minimap(screen, state, window_w, window_h, tiny_font)
+        draw_minimap(screen, state, window_w, window_h, tiny_font,
+                     bottom_bar=bar_h)
 
         pygame.display.flip()
 
-        shot = os.environ.get("MAIN_SHOT")
-        if shot:
-            pygame.image.save(screen, shot)
+        if shot_path:
+            pygame.image.save(screen, shot_path)
+            shot_path = None
         if max_frames is not None and frames >= max_frames:
             running = False
 
@@ -478,3 +715,10 @@ def main(max_frames=None):
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+

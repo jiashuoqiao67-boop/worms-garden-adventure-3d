@@ -74,6 +74,36 @@ def test_toggle_projection():
     assert cam.projection == "perspective"
 
 
+def test_screen_ray_hits_the_ground_plane():
+    """A click straight at the centre must land where the camera looks."""
+    cam = Camera(eye=(4.0, 4.0, 4.0), target=(2.0, 0.0, 2.0),
+                 width=320, height=240)
+    hit = cam.ground_hit(160, 120, ground_y=0.0)
+    assert hit is not None
+    assert abs(hit[1]) < 1e-9
+    # The pixel ray through the centre is the eye->target direction, whose
+    # intersection with y = 0 is exactly the target.
+    assert np.allclose(hit[[0, 2]], [2.0, 2.0], atol=1e-6)
+
+
+def test_screen_ray_corners_differ():
+    cam = Camera(eye=(4.0, 4.0, 4.0), target=(2.0, 0.0, 2.0),
+                 width=320, height=240)
+    left = cam.ground_hit(20, 120)
+    right = cam.ground_hit(300, 120)
+    assert left is not None and right is not None
+    assert float(np.linalg.norm(left - right)) > 0.5
+
+
+def test_orthographic_ray_is_parallel():
+    cam = Camera(eye=(0.0, 5.0, 5.0), target=(0.0, 0.0, 0.0),
+                 projection="orthographic", width=320, height=240,
+                 pixels_per_unit=30.0)
+    _, d1 = cam.screen_ray(20, 100)
+    _, d2 = cam.screen_ray(300, 200)
+    assert np.allclose(d1, d2)
+
+
 if __name__ == "__main__":
     test_basis_sanity()
     test_camera_space()
@@ -83,4 +113,7 @@ if __name__ == "__main__":
     test_clip_one_vertex_behind()
     test_clip_triangle_entirely_behind()
     test_toggle_projection()
+    test_screen_ray_hits_the_ground_plane()
+    test_screen_ray_corners_differ()
+    test_orthographic_ray_is_parallel()
     print("M4 camera / projection tests OK")

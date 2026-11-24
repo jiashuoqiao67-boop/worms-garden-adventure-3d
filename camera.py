@@ -1,4 +1,4 @@
-﻿"""
+"""
 Camera basis, perspective / orthographic projection and near-plane clipping
 (handbook ch. 7).
 
@@ -76,6 +76,39 @@ class Camera:
             sy = self.height / 2.0 - self._focal * y / depth
         return (sx, sy)
 
+    def screen_ray(self, sx, sy):
+        """Camera ray through a screen pixel, in world space (handbook 13.2).
+
+        Returns ``(origin, direction)`` with a unit direction. Used to turn a
+        mouse click into a world-space firework position by intersecting the
+        ray with the ground plane.
+        """
+        right = np.array(self._right)
+        up = np.array(self._up)
+        forward = np.array(self._forward)
+        if self.projection == "orthographic":
+            x = (sx - self.width / 2.0) / self.pixels_per_unit
+            y = -(sy - self.height / 2.0) / self.pixels_per_unit
+            return self.eye + right * x + up * y, forward
+        x = (sx - self.width / 2.0) / self._focal
+        y = -(sy - self.height / 2.0) / self._focal
+        direction = right * x + up * y + forward
+        return self.eye.copy(), normalized(direction)
+
+    def ground_hit(self, sx, sy, ground_y=0.0):
+        """Intersect the pixel ray with the horizontal plane y = ground_y.
+
+        Returns a world-space point or ``None`` when the ray is parallel to the
+        plane or hits it behind the camera.
+        """
+        origin, direction = self.screen_ray(sx, sy)
+        if abs(direction[1]) < 1e-6:
+            return None
+        t = (ground_y - origin[1]) / direction[1]
+        if t <= 0.0:
+            return None
+        return origin + direction * t
+
     def toggle_projection(self):
         self.projection = ("orthographic"
                            if self.projection == "perspective"
@@ -110,29 +143,49 @@ def clip_triangle_near(triangle, near=0.1):
     Returns a list of 3 or 4 visible vertices, or None if the whole triangle
     is behind the plane. The resulting polygon is triangulated as a fan later.
     """
-    pts = [(v[0], v[1], v[2]) for v in triangle]
-    # Fast path: the whole triangle is in front of the near plane.
-    if all(v[2] >= near for v in pts):
-        return pts
-    visible = []
+    poly, _ = clip_polygon_near(triangle, near)
+    return poly
 
-    for i in range(len(pts)):
+
+def clip_polygon_near(points, near=0.1, attributes=None):
+    """Clip a convex polygon against the near plane, interpolating attributes.
+
+    ``attributes`` may hold one tuple per vertex (UVs, colours, ...); each
+    intersection vertex receives the same interpolation parameter ``t`` that
+    the handbook (7.6) prescribes, so clipped textured triangles keep their
+    texture instead of showing a seam.
+    """
+    pts = [(float(v[0]), float(v[1]), float(v[2])) for v in points]
+    if attributes is None:
+        attributes = [()] * len(pts)
+
+    # Fast path: the whole polygon is in front of the near plane.
+    if all(v[2] >= near for v in pts):
+        return pts, (list(attributes) if attributes and attributes[0] else None)
+
+    out_pts, out_attrs = [], []
+    n = len(pts)
+    for i in range(n):
         start = pts[i]
-        end = pts[(i + 1) % len(pts)]
+        end = pts[(i + 1) % n]
         a_visible = start[2] >= near
         b_visible = end[2] >= near
 
         if a_visible != b_visible:
             t = (near - start[2]) / (end[2] - start[2])
-            intersection = (
-                start[0] + t * (end[0] - start[0]),
-                start[1] + t * (end[1] - start[1]),
-                near,
-            )
-            visible.append(intersection)
+            out_pts.append((start[0] + t * (end[0] - start[0]),
+                            start[1] + t * (end[1] - start[1]),
+                            near))
+            if attributes[0]:
+                sa, ea = attributes[i], attributes[(i + 1) % n]
+                out_attrs.append(tuple(s + t * (e - s)
+                                       for s, e in zip(sa, ea)))
         if b_visible:
-            visible.append(end)
+            out_pts.append(end)
+            if attributes[0]:
+                out_attrs.append(attributes[(i + 1) % n])
 
-    if len(visible) < 3:
-        return None
-    return visible
+    if len(out_pts) < 3:
+        return None, None
+    return out_pts, (out_attrs if attributes[0] else None)
+

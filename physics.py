@@ -1,4 +1,4 @@
-﻿"""
+"""
 Movement, wall collision, jump physics and height-aware collisions
 (handbook ch. 11).
 
@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from maze import WORM_RADIUS, BIRD_RADIUS, WALL_THICKNESS_WORLD
+from geometry import WALL_HEIGHT as WALL_HEIGHT_WORLD
 
 GRAVITY = 10.0          # world units / s^2
 JUMP_SPEED = 3.2        # world units / s (handbook 11.3)
@@ -36,7 +37,19 @@ def circle_hits_box_xz(px, pz, radius, center, size):
     return dx * dx + dz * dz < radius * radius
 
 
-def hits_any_wall(pos, boxes, radius):
+def clears_wall(pos, radius, wall_height=WALL_HEIGHT_WORLD):
+    """True when the worm's feet are above the wall top (handbook 11.4).
+
+    The jump peak is about 0.51 world units while the walls are 0.75 high, so
+    in practice the worm can never hop over a wall; the rule is implemented
+    and tested anyway so the height logic is explicit and not an accident.
+    """
+    return float(pos[1]) - radius >= wall_height
+
+
+def hits_any_wall(pos, boxes, radius, wall_height=WALL_HEIGHT_WORLD):
+    if clears_wall(pos, radius, wall_height):
+        return False
     for center, size in boxes:
         if circle_hits_box_xz(pos[0], pos[2], radius, center, size):
             return True

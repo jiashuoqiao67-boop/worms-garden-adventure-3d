@@ -1,9 +1,11 @@
-﻿"""
-3D mesh construction: cube, ground plane and wall boxes (handbook ch. 6).
+"""
+3D mesh construction: cube, ground plane, wall boxes and low-poly characters
+(handbook ch. 6).
 
-A Mesh holds world/local vertex positions and triangle index lists. Meshes are
-built from low-poly cubes and planes; placement (model matrix) is applied
-later by the renderer.
+A Mesh holds local/world vertex positions, triangle index lists and optional
+per-vertex UV coordinates. Static level geometry (ground, walls, water pads and
+flags) is merged into a few large meshes once per level so the renderer can
+process whole batches instead of hundreds of tiny meshes.
 """
 
 import math
@@ -57,16 +59,6 @@ def unit_cube() -> Mesh:
     return Mesh(vertices=CUBE_VERTICES.copy(), triangles=CUBE_TRIANGLES.copy())
 
 
-def wall_box_meshes(center, size):
-    """Split a wall box into a side mesh and a separate top-cap mesh so the
-    top can carry its own material. Returns (side_mesh, top_mesh)."""
-    sx, sy, sz = size
-    verts = CUBE_VERTICES * np.array([sx, sy, sz]) + np.asarray(center, dtype=float)
-    side = Mesh(vertices=verts, triangles=CUBE_TRIANGLES[WALL_SIDE_TRIS])
-    top = Mesh(vertices=verts, triangles=CUBE_TRIANGLES[WALL_TOP_TRIS])
-    return side, top
-
-
 def cube_mesh(size=(1.0, 1.0, 1.0), center=(0.0, 0.0, 0.0)) -> Mesh:
     """A cube scaled to `size` and translated to `center`."""
     sx, sy, sz = size
@@ -76,16 +68,78 @@ def cube_mesh(size=(1.0, 1.0, 1.0), center=(0.0, 0.0, 0.0)) -> Mesh:
 
 
 # ---------------------------------------------------------------------------
-# Ground plane: a cols x rows grid on Y = 0, upward-facing (+Y) triangles
+# UV-mapped box: every face owns its four vertices so each face can carry a
+# 0..1 UV rectangle (texture atlas style). Outward winding: cross(v1-v0,
+# v2-v0) points away from the box.
 # ---------------------------------------------------------------------------
 
-def ground_mesh(cols=3, rows=3, y=0.0) -> Mesh:
+# name, four corners (counter-clockwise seen from outside)
+_BOX_FACES = (
+    ("+X", [(0.5, -0.5, -0.5), (0.5, 0.5, -0.5), (0.5, 0.5, 0.5),
+            (0.5, -0.5, 0.5)]),
+    ("-X", [(-0.5, -0.5, -0.5), (-0.5, -0.5, 0.5), (-0.5, 0.5, 0.5),
+            (-0.5, 0.5, -0.5)]),
+    ("+Y", [(-0.5, 0.5, -0.5), (-0.5, 0.5, 0.5), (0.5, 0.5, 0.5),
+            (0.5, 0.5, -0.5)]),
+    ("-Y", [(-0.5, -0.5, -0.5), (0.5, -0.5, -0.5), (0.5, -0.5, 0.5),
+            (-0.5, -0.5, 0.5)]),
+    ("+Z", [(-0.5, -0.5, 0.5), (0.5, -0.5, 0.5), (0.5, 0.5, 0.5),
+            (-0.5, 0.5, 0.5)]),
+    ("-Z", [(-0.5, -0.5, -0.5), (-0.5, 0.5, -0.5), (0.5, 0.5, -0.5),
+            (0.5, -0.5, -0.5)]),
+)
+
+
+def box_mesh_uv(center, size, uv_per_unit=1.0, faces=None) -> Mesh:
+    """Axis-aligned box with per-face UVs (texture repeats once per world unit).
+
+    ``faces`` selects which faces to emit, e.g. ``("+X", "-X", "+Y", "+Z",
+    "-Z")`` for a wall that never shows its bottom face.
+    """
+    center = np.asarray(center, dtype=float)
+    size = np.asarray(size, dtype=float)
+    vertices, uvs, triangles = [], [], []
+    for name, corners in _BOX_FACES:
+        if faces is not None and name not in faces:
+            continue
+        base = len(vertices)
+        pts = [np.array(c, dtype=float) * size + center for c in corners]
+        # Corner order is (0,0) (0,1) (1,1) (1,0): u runs along c0->c3 and
+        # v along c0->c1, so the texture keeps its aspect on every face.
+        du = float(np.linalg.norm(pts[3] - pts[0])) * uv_per_unit
+        dv = float(np.linalg.norm(pts[1] - pts[0])) * uv_per_unit
+        vertices.extend(pts)
+        uvs.extend([(0.0, 0.0), (0.0, dv), (du, dv), (du, 0.0)])
+        triangles.extend([(base, base + 1, base + 2),
+                          (base, base + 2, base + 3)])
+    return Mesh(vertices=np.array(vertices, dtype=float),
+                triangles=np.array(triangles, dtype=int),
+                uvs=np.array(uvs, dtype=float))
+
+
+def wall_box_meshes(center, size):
+    """Split one wall box into (side faces, green top cap).
+
+    The bottom face is never visible, so it is not emitted. Both parts carry
+    UVs, so the stone texture is mapped onto the wall sides.
+    """
+    sides = box_mesh_uv(center, size, uv_per_unit=1.0,
+                        faces=("+X", "-X", "+Z", "-Z"))
+    top = box_mesh_uv(center, size, uv_per_unit=1.0, faces=("+Y",))
+    return sides, top
+
+
+# ---------------------------------------------------------------------------
+# Ground plane and surrounding lawn (Y = 0 grid, upward-facing triangles)
+# ---------------------------------------------------------------------------
+
+def ground_mesh(cols=3, rows=3, y=0.0, uv_per_unit=1.0) -> Mesh:
     vertices = []
     uvs = []
     for r in range(rows + 1):
         for c in range(cols + 1):
             vertices.append([float(c), y, float(r)])
-            uvs.append([c / cols, r / rows])
+            uvs.append([c * uv_per_unit, r * uv_per_unit])
     vertices = np.array(vertices, dtype=float)
     uvs = np.array(uvs, dtype=float)
 
@@ -103,6 +157,38 @@ def ground_mesh(cols=3, rows=3, y=0.0) -> Mesh:
 
     return Mesh(vertices=vertices, triangles=np.array(triangles, dtype=int),
                 uvs=uvs)
+
+
+def lawn_mesh(cols, rows, margin=16.0, y=-0.01, step=2.0,
+              uv_per_unit=0.5) -> Mesh:
+    """A large grass plane under and around the maze.
+
+    Without it the maze looks like a floating slab and the horizon shows the
+    sky through the floor edge.
+    """
+    x0, z0 = -margin, -margin
+    x1, z1 = cols + margin, rows + margin
+    nx = max(2, int(math.ceil((x1 - x0) / step)))
+    nz = max(2, int(math.ceil((z1 - z0) / step)))
+    vertices, uvs, triangles = [], [], []
+    for iz in range(nz + 1):
+        z = z0 + (z1 - z0) * iz / nz
+        for ix in range(nx + 1):
+            x = x0 + (x1 - x0) * ix / nx
+            vertices.append([x, y, z])
+            uvs.append([x * uv_per_unit, z * uv_per_unit])
+    stride = nx + 1
+    for iz in range(nz):
+        for ix in range(nx):
+            v00 = iz * stride + ix
+            v10 = v00 + 1
+            v01 = v00 + stride
+            v11 = v01 + 1
+            triangles.append((v00, v01, v11))
+            triangles.append((v00, v11, v10))
+    return Mesh(vertices=np.array(vertices, dtype=float),
+                triangles=np.array(triangles, dtype=int),
+                uvs=np.array(uvs, dtype=float))
 
 
 # ---------------------------------------------------------------------------
@@ -140,19 +226,28 @@ def wall_box(col, row, direction):
 # Parametric round solids: sphere / ellipsoid, ground disc, mesh merge
 # ---------------------------------------------------------------------------
 
-def _merge_meshes(meshes):
-    """Combine several Meshes into one, offsetting triangle indices."""
-    verts, tris, uvs = [], [], []
+def merge_meshes(meshes):
+    """Combine several Meshes into one, offsetting triangle indices.
+
+    UVs survive only when every input mesh has them; mixing textured and
+    untextured parts in one mesh would silently mis-map the texture.
+    """
+    meshes = [m for m in meshes
+              if m is not None and len(np.asarray(m.vertices))]
+    verts, tris = [], []
     v_off = 0
     for m in meshes:
-        verts.append(m.vertices)
-        tris.append(m.triangles + v_off)
-        if m.uvs is not None:
-            uvs.append(m.uvs)
+        verts.append(np.asarray(m.vertices, dtype=float))
+        if len(m.triangles):
+            tris.append(np.asarray(m.triangles, dtype=int) + v_off)
         v_off += len(m.vertices)
+    if not verts:
+        return Mesh(np.zeros((0, 3)), np.zeros((0, 3), dtype=int))
     vertices = np.vstack(verts)
-    triangles = np.vstack(tris)
-    uv = np.vstack(uvs) if uvs else None
+    triangles = np.vstack(tris) if tris else np.zeros((0, 3), dtype=int)
+    all_uv = all(m.uvs is not None for m in meshes)
+    uv = np.vstack([np.asarray(m.uvs, dtype=float) for m in meshes]) \
+        if all_uv else None
     return Mesh(vertices=vertices, triangles=triangles, uvs=uv)
 
 
@@ -218,37 +313,63 @@ def _place(mesh, center):
     return mesh
 
 
-def worm_parts(center=(0.0, 0.0, 0.0)):
-    """Caterpillar: tapered segment chain + round head, split into a body
-    part and an eye part. Vertices are local to the origin (head faces +Z);
-    the renderer positions/rotates them with a model matrix.
-    The `center` argument is kept for signature compatibility and is not
-    baked into the local vertices."""
-    body = []
-    seg_z = [-0.21, -0.12, -0.03, 0.06]
-    for i, z in enumerate(seg_z):
-        r = 0.105 + 0.02 * (i / 3.0)
-        body.append(_sph((0.0, 0.0, z), (r, r, 0.075),
-                         rings=4, sectors=6))
-    body.append(_sph((0.0, 0.01, 0.21),
-                      (0.14, 0.135, 0.125), rings=5, sectors=8))
-    # Eyes sit proud of the front/top of the head, not buried inside it.
+# ---------------------------------------------------------------------------
+# Worm: a head plus four body segments. Each segment is its own mesh so the
+# gameplay code can place it on an older sample of the head path (12.2).
+# ---------------------------------------------------------------------------
+
+WORM_SEGMENT_COUNT = 4          # body segments behind the head
+WORM_SEGMENT_SPACING = 0.155    # world units between segment centres
+
+
+def worm_head_mesh() -> Mesh:
+    """Head (with eyes) centred on the local origin, facing +Z."""
+    head = _sph((0.0, 0.01, 0.0), (0.145, 0.135, 0.155), rings=5, sectors=8)
     eyes = [
-        _sph((-0.06, 0.075, 0.305),
-             (0.026, 0.026, 0.026), rings=3, sectors=5),
-        _sph((0.06, 0.075, 0.305),
-             (0.026, 0.026, 0.026), rings=3, sectors=5),
+        _sph((-0.062, 0.085, 0.10), (0.026, 0.026, 0.026), rings=3, sectors=5),
+        _sph((0.062, 0.085, 0.10), (0.026, 0.026, 0.026), rings=3, sectors=5),
     ]
-    return [(_merge_meshes(body), "worm"),
-            (_merge_meshes(eyes), "eye")]
+    return merge_meshes([head] + eyes)
+
+
+def worm_segment_mesh(index) -> Mesh:
+    """Body segment `index` (0 = closest to the head, larger radius)."""
+    t = index / max(1, WORM_SEGMENT_COUNT - 1)
+    r = 0.115 - 0.045 * t
+    return _sph((0.0, 0.0, 0.0), (r, r * 0.92, 0.085),
+                rings=4, sectors=7)
+
+
+def worm_parts(center=(0.0, 0.0, 0.0)):
+    """Legacy single-mesh worm (kept for the offscreen tools/tests).
+
+    Returns [(body_mesh, "worm"), (eyes_mesh, "eye")] with the worm local to
+    the origin and facing +Z.
+    """
+    segs = [worm_segment_mesh(i) for i in range(WORM_SEGMENT_COUNT)]
+    for i, seg in enumerate(segs):
+        z = -WORM_SEGMENT_SPACING * (i + 1)
+        seg.vertices[:, 2] += z
+    body = merge_meshes(segs + [worm_head_mesh()])
+    eyes = merge_meshes([
+        _sph((-0.062, 0.095, 0.10), (0.026, 0.026, 0.026),
+             rings=3, sectors=5),
+        _sph((0.062, 0.095, 0.10), (0.026, 0.026, 0.026),
+             rings=3, sectors=5),
+    ])
+    return [(body, "worm"), (eyes, "eye")]
 
 
 def worm_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
-    parts = worm_parts()
-    for m, _ in parts:
+    body, eyes = worm_parts(center)
+    for m in (body, eyes):
         _place(m, center)
-    return _merge_meshes([m for m, _ in parts])
+    return merge_meshes([body, eyes])
 
+
+# ---------------------------------------------------------------------------
+# Collectibles and birds
+# ---------------------------------------------------------------------------
 
 def apple_parts(center=(0.0, 0.0, 0.0)):
     """Apple: flattened fruit, short stem and one leaf (local origin)."""
@@ -256,29 +377,28 @@ def apple_parts(center=(0.0, 0.0, 0.0)):
     stem = [cube_mesh((0.024, 0.10, 0.024), (0.0, 0.17, 0.0))]
     leaf = [_sph((0.06, 0.19, 0.0),
                  (0.06, 0.014, 0.032), rings=3, sectors=5)]
-    return [(_merge_meshes(fruit), "fruit"),
-            (_merge_meshes(stem), "stem"),
-            (_merge_meshes(leaf), "leaf")]
+    return [(merge_meshes(fruit), "fruit"),
+            (merge_meshes(stem), "stem"),
+            (merge_meshes(leaf), "leaf")]
 
 
 def apple_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
     parts = apple_parts()
     for m, _ in parts:
         _place(m, center)
-    return _merge_meshes([m for m, _ in parts])
+    return merge_meshes([m for m, _ in parts])
 
 
 def bird_parts(center=(0.0, 0.0, 0.0)):
-    """Bird: body, head, folded wings and tail, plus a beak and eyes
-    (local origin, head/beak face +Z)."""
+    """Bird body, belly, beak and eyes (local origin, head/beak face +Z).
+
+    The two wings are separate meshes (``bird_wing_meshes``) so they can flap
+    by rotating about the bird's forward axis (12.2).
+    """
     body = [
         _sph((0.0, 0.0, 0.0), (0.15, 0.11, 0.19), rings=4, sectors=6),
         _sph((0.0, 0.05, 0.17),
              (0.09, 0.085, 0.09), rings=4, sectors=6),
-        _sph((-0.14, 0.02, -0.04),
-             (0.11, 0.016, 0.10), rings=3, sectors=5),
-        _sph((0.14, 0.02, -0.04),
-             (0.11, 0.016, 0.10), rings=3, sectors=5),
         _sph((0.0, 0.02, -0.21),
              (0.05, 0.02, 0.085), rings=3, sectors=5),
     ]
@@ -292,17 +412,31 @@ def bird_parts(center=(0.0, 0.0, 0.0)):
         _sph((0.085, 0.06, 0.18),
              (0.02, 0.02, 0.02), rings=3, sectors=5),
     ]
-    return [(_merge_meshes(body), "bird"),
-            (_merge_meshes(belly), "belly"),
-            (_merge_meshes(beak), "beak"),
-            (_merge_meshes(eyes), "eye")]
+    return [(merge_meshes(body), "bird"),
+            (merge_meshes(belly), "belly"),
+            (merge_meshes(beak), "beak"),
+            (merge_meshes(eyes), "eye")]
+
+
+def bird_wing_meshes():
+    """Left and right wing as separate meshes hinged at the body axis.
+
+    The wings are built around the local origin so a rotation about Z through
+    the origin swings the wing tip up and down.
+    """
+    left = _sph((-0.14, 0.02, -0.04), (0.11, 0.016, 0.10),
+                rings=3, sectors=5)
+    right = _sph((0.14, 0.02, -0.04), (0.11, 0.016, 0.10),
+                 rings=3, sectors=5)
+    return left, right
 
 
 def bird_mesh(center=(0.0, 0.0, 0.0)) -> Mesh:
     parts = bird_parts()
+    left, right = bird_wing_meshes()
     for m, _ in parts:
         _place(m, center)
-    return _merge_meshes([m for m, _ in parts])
+    return merge_meshes([m for m, _ in parts] + [left, right])
 
 
 def flag_mesh(base=(0.0, 0.0, 0.0), height=0.8) -> Mesh:
@@ -315,7 +449,7 @@ def flag_mesh(base=(0.0, 0.0, 0.0), height=0.8) -> Mesh:
     tip = [bx + 0.32, by + height - 0.09, bz]
     flag = Mesh(vertices=np.array([top, mid, tip], dtype=float),
                 triangles=np.array([(0, 1, 2)], dtype=int))
-    return _merge_meshes([pole, flag])
+    return merge_meshes([pole, flag])
 
 
 def maze_wall_boxes(maze, cols, rows):
@@ -338,3 +472,17 @@ def maze_wall_boxes(maze, cols, rows):
             if row == rows - 1 and walls["S"]:
                 boxes.append(wall_box(col, row, "S"))
     return boxes
+
+
+def maze_wall_meshes(maze, cols, rows):
+    """Merged wall geometry: (all side faces, all green top caps).
+
+    One mesh per material keeps the per-frame draw-call count tiny; the
+    colliders still come from ``maze_wall_boxes`` (same centre/size data).
+    """
+    sides, tops = [], []
+    for center, size in maze_wall_boxes(maze, cols, rows):
+        s, t = wall_box_meshes(center, size)
+        sides.append(s)
+        tops.append(t)
+    return merge_meshes(sides), merge_meshes(tops)

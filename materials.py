@@ -33,26 +33,48 @@ class Material:
 # ---------------------------------------------------------------------------
 
 def make_grass_texture(size=128, seed=12):
+    """Procedural lawn: short blade strokes in four green tones (10.1)."""
     rng = random.Random(seed)
-    img = Image.new("RGB", (size, size), (35, 105, 48))
+    img = Image.new("RGB", (size, size), (52, 112, 58))
     draw = ImageDraw.Draw(img)
-    tones = [(30, 74, 34), (54, 130, 48), (77, 146, 72), (49, 125, 57)]
-    for _ in range(900):
+    tones = [(38, 88, 44), (62, 128, 60), (84, 148, 78), (48, 104, 52),
+             (96, 160, 86)]
+    for _ in range(6 * size):
         x, y = rng.randrange(size), rng.randrange(size)
         tone = rng.choice(tones)
-        draw.line((x, y, x + 1, y - 3), fill=tone)
+        length = rng.randint(2, 5)
+        draw.line((x, y, x + rng.randint(-1, 1), y - length), fill=tone)
+    # A few darker tufts break up the regularity when the texture tiles.
+    for _ in range(size // 4):
+        x, y = rng.randrange(size), rng.randrange(size)
+        draw.ellipse((x, y, x + rng.randint(3, 7), y + rng.randint(2, 4)),
+                     fill=(40, 92, 46))
     return np.array(img.convert("RGB"), dtype=np.uint8)
 
 
-def make_stone_texture(size=128, seed=7):
+def make_stone_texture(size=64, seed=7):
+    """Procedural weathered stone: brick courses with mortar lines."""
     rng = random.Random(seed)
-    img = Image.new("RGB", (size, size), (146, 140, 130))
+    img = Image.new("RGB", (size, size), (196, 188, 172))   # mortar
     draw = ImageDraw.Draw(img)
-    for _ in range(500):
+    rows = 4
+    row_h = size // rows
+    brick_w = size // 2
+    palette = [(176, 168, 152), (188, 180, 164), (166, 158, 142),
+               (198, 190, 176)]
+    for r in range(rows):
+        y0 = r * row_h
+        offset = 0 if r % 2 == 0 else brick_w // 2
+        for c in range(-1, size // brick_w + 2):
+            x0 = c * brick_w + offset
+            shade = rng.choice(palette)
+            draw.rectangle((x0 + 1, y0 + 1, x0 + brick_w - 2,
+                            y0 + row_h - 2), fill=shade)
+    # Fine speckle so the surface is not perfectly flat.
+    for _ in range(size * 3):
         x, y = rng.randrange(size), rng.randrange(size)
-        tone = rng.choice([(96, 92, 86), (146, 140, 130), (172, 166, 154)])
-        draw.rectangle((x, y, x + rng.randrange(2, 6), y + rng.randrange(2, 6)),
-                       fill=tone)
+        tone = rng.choice([(150, 144, 130), (206, 198, 184)])
+        draw.point((x, y), fill=tone)
     return np.array(img.convert("RGB"), dtype=np.uint8)
 
 

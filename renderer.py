@@ -1,27 +1,36 @@
-﻿"""
+"""
 Software renderer: triangle rasterization, barycentric coordinates, Z-buffer,
 flat lighting and texture sampling (handbook ch. 8-10).
 
-Pipeline per triangle:
+Pipeline per mesh:
     model -> world -> camera space -> near-plane clip -> project -> rasterize.
 
+All triangles that are fully in front of the near plane are transformed and
+projected with NumPy array operations and rasterized in one batched pass
+(Numba when available, pure NumPy otherwise). Only the rare triangles that
+cross the near plane take the per-triangle Sutherland-Hodgman path.
+
 Lighting is flat (one intensity per triangle). Textures use nearest-neighbour
-sampling with perspective-correct UV interpolation.
+sampling by default and perspective-correct UV interpolation; bilinear
+filtering and depth fog are Part B extensions.
 """
+
+import math
 
 import numpy as np
 
-from transforms import transform_point, normalized
-from camera import clip_triangle_near
+from transforms import normalized
+from camera import clip_polygon_near
 from materials import (
-    face_normal, shade, sample_nearest, sample_bilinear, AMBIENT, DIFFUSE,
+    face_normal, sample_nearest, sample_bilinear, AMBIENT, DIFFUSE,
 )
-from renderer_jit import HAS_NUMBA, rasterize_njit
+from renderer_jit import HAS_NUMBA, rasterize_batch, draw_edges_batch
 
 _EPS = 1e-9
-DEFAULT_LIGHT_DIR = (0.5, 1.0, 0.3)
+DEFAULT_LIGHT_DIR = (0.35, 0.80, 0.50)
 # Pre-normalized once; the light direction is constant across the scene.
 _LIGHT_NORM = normalized(DEFAULT_LIGHT_DIR)
+WIRE_COLOR = (140, 255, 180)
 
 
 def _edge(a, b, p):
@@ -70,18 +79,17 @@ class Renderer:
         # Part B extension 1: atmospheric depth fog.
         # fog = {"color": np.ndarray(3), "near": float, "far": float} or None.
         self.fog = fog
-        # Back-face culling in camera space: skip triangles whose face normal
-        # points away from the camera (+Z is forward here). Flat horizontal
-        # faces whose normal is nearly parallel to the image plane are kept.
+        # Back-face culling in world space: skip triangles whose outward
+        # normal points away from the eye (handbook 8.4).
         self.backface_cull = True
-        # Scene-level distance/range cull, enabled only for the chase camera
-        # (where most walls lie behind or beyond the fog). Off for overview /
-        # side views so the whole maze stays on screen with no extra per-mesh
-        # centre work.
-        self.cull_distance = False
+        # F1 debugging view: fill flat + draw projected triangle edges.
+        self.wireframe = False
         # Cache for the identity-model-matrix check (see draw_mesh).
         self._last_model = None
         self._last_is_identity = False
+        # Per-frame counters, reported in the HUD / benchmark.
+        self.stats = {"submitted": 0, "culled": 0, "clipped": 0,
+                      "rasterized": 0}
 
     def clear(self):
         if self._sky is not None:
@@ -89,55 +97,109 @@ class Renderer:
         else:
             self.colorbuf[:] = self.background
         self.depthbuf.fill(np.inf)
+        for key in self.stats:
+            self.stats[key] = 0
 
-    def _project(self, camera, cam_point):
-        return camera.project_cam(cam_point)
+    # ------------------------------------------------------------------
+    # Projection helpers
+    # ------------------------------------------------------------------
+
+    def _project_arrays(self, cam):
+        """Vectorized camera-space -> screen-pixel projection."""
+        depth = cam[:, 2]
+        safe = np.where(depth > _EPS, depth, 1.0)
+        if self._ortho:
+            sx = self.width / 2.0 + self._ppu * cam[:, 0]
+            sy = self.height / 2.0 - self._ppu * cam[:, 1]
+        else:
+            sx = self.width / 2.0 + self._focal * cam[:, 0] / safe
+            sy = self.height / 2.0 - self._focal * cam[:, 1] / safe
+        return sx, sy
+
+    # ------------------------------------------------------------------
+    # Rasterization
+    # ------------------------------------------------------------------
+
+    def _prepare(self, camera):
+        self._focal = camera._focal
+        self._ppu = camera.pixels_per_unit
+        self._ortho = camera.projection == "orthographic"
+        self._near = camera.near
 
     def rasterize_triangle(self, screen, depths, rgb, texture=None,
                            uvs=None, intensity=1.0, filter_mode="nearest"):
         """Fill one projected triangle with a Z-buffer test.
 
-        screen: three (x, y) pixels; depths: three camera-space z values.
-        If texture + uvs are given, sample the texture with perspective-correct
-        UV interpolation and modulate by the flat lighting intensity.
-
-        The bounding box is scanned with NumPy arrays; the per-pixel math
-        (barycentric weights, perspective-correct depth/UV, depth test) is the
-        same as the handbook description, only vectorized for speed.
+        Public single-triangle entry point used by the numerical tests and by
+        the near-plane clipping fallback. ``screen`` holds three (x, y)
+        pixels, ``depths`` the three camera-space z values.
         """
-        a, b, c = screen
-        za, zb, zc = depths
-        H, W = self.depthbuf.shape
+        sx = np.array([[p[0] for p in screen]], dtype=float)
+        sy = np.array([[p[1] for p in screen]], dtype=float)
+        sz = np.array([depths], dtype=float)
+        base = np.array([rgb], dtype=float)
+        inten = np.array([float(intensity)], dtype=float)
+        use_tex = texture is not None and uvs is not None
+        uv = np.array([uvs], dtype=float) if use_tex else np.empty((0, 3, 2))
+        tex = (np.asarray(texture, dtype=np.uint8) if use_tex
+               else np.empty((0, 0, 3), dtype=np.uint8))
+        self._submit(sx, sy, sz, base, inten, uv, tex,
+                     texture is not None, filter_mode)
+        self.stats["rasterized"] += 1
+
+    def _submit(self, sx, sy, sz, base, inten, uv, tex, use_texture,
+                filter_mode):
+        """Rasterize one batch of triangles (same texture for all of them)."""
+        if not len(sx):
+            return
+        if self.fog is not None:
+            fog_color = np.asarray(self.fog["color"], dtype=float)
+            fog_near = float(self.fog["near"])
+            fog_far = float(self.fog["far"])
+            use_fog = True
+        else:
+            fog_color = np.zeros(3)
+            fog_near, fog_far, use_fog = 0.0, 1.0, False
 
         if HAS_NUMBA:
-            sx = np.asarray([a[0], b[0], c[0]], dtype=float)
-            sy = np.asarray([a[1], b[1], c[1]], dtype=float)
-            sz = np.asarray([za, zb, zc], dtype=float)
-            base = np.asarray(rgb, dtype=float)
-            use_tex = texture is not None and uvs is not None
-            tex = texture if use_tex else np.empty((0, 0, 3), dtype=np.uint8)
-            uv = np.asarray(uvs, dtype=float) if use_tex else np.empty((0, 2))
-            if self.fog is not None:
-                fog_color = np.asarray(self.fog["color"], dtype=float)
-                fog_near, fog_far = self.fog["near"], self.fog["far"]
-                use_fog = True
-            else:
-                fog_color = np.zeros(3)
-                fog_near, fog_far, use_fog = 0.0, 1.0, False
-            rasterize_njit(self.colorbuf, self.depthbuf, sx, sy, sz, base,
-                           tex, uv, float(intensity), use_tex,
-                           filter_mode == "bilinear", use_fog,
-                           fog_color, fog_near, fog_far)
-            return
+            rasterize_batch(self.colorbuf, self.depthbuf,
+                            np.ascontiguousarray(sx, dtype=float),
+                            np.ascontiguousarray(sy, dtype=float),
+                            np.ascontiguousarray(sz, dtype=float),
+                            np.ascontiguousarray(base, dtype=float),
+                            np.ascontiguousarray(inten, dtype=float),
+                            np.ascontiguousarray(uv, dtype=float), tex,
+                            bool(use_texture),
+                            filter_mode == "bilinear", use_fog, fog_color,
+                            fog_near, fog_far)
+        else:
+            for t in range(len(sx)):
+                self._rasterize_one_numpy(
+                    sx[t], sy[t], sz[t], base[t], inten[t],
+                    uv[t] if use_texture else None, tex, filter_mode,
+                    fog_color if use_fog else None, fog_near, fog_far)
 
+        if self.wireframe:
+            line = np.array(WIRE_COLOR, dtype=np.uint8)
+            if HAS_NUMBA:
+                draw_edges_batch(self.colorbuf, sx, sy, line)
+            else:
+                self._draw_edges_numpy(sx, sy, line)
+
+    def _rasterize_one_numpy(self, sx, sy, sz, base, inten, uv, tex,
+                             filter_mode, fog_color, fog_near, fog_far):
+        """Pure NumPy fallback for one triangle (no Numba installed)."""
+        a = (sx[0], sy[0])
+        b = (sx[1], sy[1])
+        c = (sx[2], sy[2])
+        za, zb, zc = sz
+        H, W = self.depthbuf.shape
         x0 = max(0, int(np.floor(min(a[0], b[0], c[0]))))
         x1 = min(W - 1, int(np.ceil(max(a[0], b[0], c[0]))))
         y0 = max(0, int(np.floor(min(a[1], b[1], c[1]))))
         y1 = min(H - 1, int(np.ceil(max(a[1], b[1], c[1]))))
         if x1 < x0 or y1 < y0:
             return
-
-        rgb = np.asarray(rgb, dtype=float)
 
         xs = np.arange(x0, x1 + 1, dtype=float) + 0.5
         ys = np.arange(y0, y1 + 1, dtype=float) + 0.5
@@ -146,9 +208,11 @@ class Renderer:
         area = _edge(a, b, c)
         if abs(area) < _EPS:
             return
-        wa = ((gx - b[0]) * (c[1] - b[1]) - (gy - b[1]) * (c[0] - b[0])) / area
-        wb = ((gx - c[0]) * (a[1] - c[1]) - (gy - c[1]) * (a[0] - c[0])) / area
-        wc = ((gx - a[0]) * (b[1] - a[1]) - (gy - a[1]) * (b[0] - a[0])) / area
+        wa = ((gx - b[0]) * (c[1] - b[1])
+              - (gy - b[1]) * (c[0] - b[0])) / area
+        wb = ((gx - c[0]) * (a[1] - c[1])
+              - (gy - c[1]) * (a[0] - c[0])) / area
+        wc = 1.0 - wa - wb
 
         mask = (wa >= -_EPS) & (wb >= -_EPS) & (wc >= -_EPS)
         invz = wa / za + wb / zb + wc / zc
@@ -156,124 +220,228 @@ class Renderer:
         if not mask.any():
             return
         z = 1.0 / invz
-
         sub_depth = self.depthbuf[y0:y1 + 1, x0:x1 + 1]
         mask &= z < sub_depth
         if not mask.any():
             return
 
-        if texture is not None and uvs is not None:
-            # Perspective-correct UV: interpolate u/z, v/z, 1/z (10.2)
-            u = (wa * uvs[0][0] / za + wb * uvs[1][0] / zb
-                 + wc * uvs[2][0] / zc) / invz
-            v = (wa * uvs[0][1] / za + wb * uvs[1][1] / zb
-                 + wc * uvs[2][1] / zc) / invz
-            th, tw, _ = texture.shape
+        if uv is not None:
+            u = (wa * uv[0][0] / za + wb * uv[1][0] / zb
+                 + wc * uv[2][0] / zc) / invz
+            v = (wa * uv[0][1] / za + wb * uv[1][1] / zb
+                 + wc * uv[2][1] / zc) / invz
             u = np.mod(u, 1.0)
             v = np.mod(v, 1.0)
-
+            th, tw, _ = tex.shape
             if filter_mode == "bilinear":
-                # Part B extension 2: interpolate the four neighbouring texels.
                 final = np.zeros(gx.shape + (3,), dtype=float)
                 hit_y, hit_x = np.where(mask)
                 for yy, xx in zip(hit_y, hit_x):
-                    texel = sample_bilinear(texture, u[yy, xx], v[yy, xx])
-                    final[yy, xx] = np.clip(texel * intensity, 0, 255)
+                    texel = sample_bilinear(tex, u[yy, xx], v[yy, xx])
+                    final[yy, xx] = texel * inten
             else:
                 tx = np.minimum((u * tw).astype(int), tw - 1)
                 ty = np.minimum((v * th).astype(int), th - 1)
-                texel = texture[ty, tx].astype(float)
-                final = np.clip(texel * intensity, 0, 255)
+                final = tex[ty, tx].astype(float) * inten
+            final *= np.asarray(base, dtype=float) / 255.0
         else:
-            final = np.broadcast_to(rgb, gx.shape + (3,))
+            final = np.broadcast_to(np.asarray(base, dtype=float) * inten,
+                                    gx.shape + (3,))
 
-        # Part B extension 1: blend distant fragments toward the fog colour.
-        if self.fog is not None:
-            fog = self.fog
-            fog_t = np.clip((z - fog["near"]) / (fog["far"] - fog["near"]),
-                            0.0, 1.0)
-            fog_color = np.asarray(fog["color"], dtype=float)
-            final = final * (1.0 - fog_t[..., None]) + fog_color * fog_t[..., None]
+        if fog_color is not None:
+            ft = np.clip((z - fog_near) / (fog_far - fog_near), 0.0, 1.0)
+            final = final * (1.0 - ft[..., None]) + fog_color * ft[..., None]
 
         sub_depth[mask] = z[mask]
         sub_color = self.colorbuf[y0:y1 + 1, x0:x1 + 1]
         sub_color[mask] = np.clip(final[mask], 0, 255).astype(np.uint8)
 
+    def _draw_edges_numpy(self, sx, sy, rgb):
+        H, W, _ = self.colorbuf.shape
+        for t in range(len(sx)):
+            for e in range(3):
+                i, j = e, (e + 1) % 3
+                x0, y0 = sx[t, i], sy[t, i]
+                x1, y1 = sx[t, j], sy[t, j]
+                steps = int(max(abs(x1 - x0), abs(y1 - y0))) + 1
+                for s in range(steps + 1):
+                    f = s / steps
+                    x = int(x0 + (x1 - x0) * f)
+                    y = int(y0 + (y1 - y0) * f)
+                    if 0 <= x < W and 0 <= y < H:
+                        self.colorbuf[y, x] = rgb
+
+    # ------------------------------------------------------------------
+    # Mesh drawing
+    # ------------------------------------------------------------------
+
     def draw_mesh(self, camera, mesh, model_matrix, material,
                   light_dir=DEFAULT_LIGHT_DIR):
         """Transform, light, project and rasterize every triangle of a mesh."""
-        light = _LIGHT_NORM if light_dir is DEFAULT_LIGHT_DIR else normalized(light_dir)
-        # Most meshes already hold world-space vertices under an identity
-        # model matrix; skip the 4x4 multiply in that common case. Cache the
-        # identity check by matrix object identity (the shared IDENTITY matrix
-        # is passed for every static mesh).
+        if not len(mesh.triangles):
+            return
+        self._prepare(camera)
+        light = (_LIGHT_NORM if light_dir is DEFAULT_LIGHT_DIR
+                 else normalized(light_dir))
+
+        # Model -> world (handbook 5.2). The shared identity matrix used by
+        # every static mesh skips the matrix product entirely.
         if self._last_model is model_matrix:
             is_identity = self._last_is_identity
         else:
             is_identity = np.allclose(model_matrix, np.eye(4))
             self._last_model = model_matrix
             self._last_is_identity = is_identity
+        if is_identity:
+            world = np.asarray(mesh.vertices, dtype=float)
+        else:
+            M = np.asarray(model_matrix, dtype=float)
+            world = np.asarray(mesh.vertices, dtype=float) @ M[:3, :3].T \
+                + M[:3, 3]
 
-        # Bounding-centre quick reject (scene-level cull, mirroring the
-        # reference range cull): skip a whole mesh that sits behind the near
-        # plane or beyond the fog far plane, where it already blends into the
-        # backdrop. The centre is cached per mesh so it is computed once.
-        if self.cull_distance:
-            far = self.fog["far"] if self.fog is not None else 60.0
-            center = getattr(mesh, "_cull_center", None)
-            if center is None:
-                center = mesh.vertices.mean(axis=0)
-                mesh._cull_center = center
-            if not is_identity:
-                center = transform_point(model_matrix, center)
-            cc = camera.to_camera_space(center)
-            if cc[2] < camera.near or cc[2] > far:
-                return
+        # World -> camera space in one matrix product against the camera basis.
+        basis = np.array([camera._right, camera._up, camera._forward],
+                         dtype=float)
+        cam = (world - camera.eye) @ basis.T
 
-        for tri in mesh.triangles:
-            if is_identity:
-                world_pts = [mesh.vertices[i] for i in tri]
-            else:
-                world_pts = [transform_point(model_matrix, mesh.vertices[i])
-                             for i in tri]
-            cam_pts = [camera.to_camera_space(p) for p in world_pts]
+        tri = np.asarray(mesh.triangles, dtype=int)
+        P = world[tri]              # (T, 3, 3) world-space triangle corners
+        C = cam[tri]                # (T, 3, 3) camera-space corners
+        self.stats["submitted"] += len(tri)
 
-            # Back-face culling (camera space, +Z forward): a face pointing
-            # away from the viewer has a positive camera-space normal Z.
-            if self.backface_cull:
-                ca, cb, cc = cam_pts
-                cux = cb[0] - ca[0]; cuy = cb[1] - ca[1]; cuz = cb[2] - ca[2]
-                cvx = cc[0] - ca[0]; cvy = cc[1] - ca[1]; cvz = cc[2] - ca[2]
-                if cux * cvy - cuy * cvx > 1e-6:
-                    continue
+        # Flat shading: one face normal and intensity per triangle (ch. 9).
+        e1 = P[:, 1] - P[:, 0]
+        e2 = P[:, 2] - P[:, 0]
+        n = np.cross(e1, e2)
+        length = np.linalg.norm(n, axis=1)
+        safe = length > 1e-12
+        n[safe] /= length[safe, None]
+        n[~safe] = (0.0, 1.0, 0.0)
 
-            poly = clip_triangle_near(cam_pts, camera.near)
+        nd = n @ light
+        inten = AMBIENT + DIFFUSE * np.maximum(0.0, nd)
+        base = np.array(material.base_color, dtype=float)
+
+        depth = C[:, :, 2]
+        dmin = depth.min(axis=1)
+        dmax = depth.max(axis=1)
+        behind = dmax <= self._near
+        crossing = (dmin <= self._near) & ~behind
+
+        keep = ~behind
+        if self.backface_cull:
+            # View vector from each triangle corner to the eye; a front face
+            # has its outward normal pointing toward the camera (8.4).
+            view = camera.eye[None, :] - P[:, 0, :]
+            keep &= np.einsum("ij,ij->i", n, view) > 0.0
+        self.stats["culled"] += int(np.count_nonzero(~keep & ~behind))
+
+        solid = keep & ~crossing
+        self.stats["clipped"] += int(np.count_nonzero(keep & crossing))
+
+        if solid.any():
+            sx, sy = self._project_arrays(C[solid].reshape(-1, 3))
+            tri_count = int(np.count_nonzero(solid))
+            sx = sx.reshape(tri_count, 3)
+            sy = sy.reshape(tri_count, 3)
+            sz = depth[solid]
+            uvs = (np.asarray(mesh.uvs, dtype=float)[tri[solid]]
+                   if (material.texture is not None and mesh.uvs is not None)
+                   else np.empty((0, 3, 2)))
+            tex = (np.asarray(material.texture, dtype=np.uint8)
+                   if len(uvs) else np.empty((0, 0, 3), dtype=np.uint8))
+            self._submit(sx, sy, sz, np.repeat(base[None, :], tri_count, 0),
+                         inten[solid], uvs, tex, len(uvs) > 0,
+                         material.filter_mode)
+            self.stats["rasterized"] += tri_count
+
+        if crossing.any():
+            self._draw_clipped(camera, mesh, tri, C, crossing, material,
+                               inten, base)
+
+    def _draw_clipped(self, camera, mesh, tri, C, crossing, material, inten,
+                      base):
+        """Near-plane path: clip each crossing triangle, then rasterize.
+
+        The clipped fan triangles are collected and submitted as one batch so
+        this path costs a single rasterizer call instead of one per triangle.
+        """
+        tri_idx = np.nonzero(crossing)[0]
+        has_uv = material.texture is not None and mesh.uvs is not None
+        screens, depths, uv_list, intens = [], [], [], []
+        for idx in tri_idx:
+            cam_tri = [tuple(C[idx, k]) for k in range(3)]
+            attrs = None
+            if has_uv:
+                attrs = [tuple(mesh.uvs[tri[idx, k]]) for k in range(3)]
+            poly, poly_attrs = clip_polygon_near(cam_tri, self._near, attrs)
             if poly is None:
                 continue
-
-            # Flat shading: one face normal and intensity per triangle.
-            normal = face_normal(world_pts[0], world_pts[1], world_pts[2])
-            nd = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2]
-            intensity = AMBIENT + DIFFUSE * (nd if nd > 0.0 else 0.0)
-            bc = material.base_color
-            shaded = [min(255.0, max(0.0, float(bc[i]) * intensity))
-                      for i in range(3)]
-
-            textured = (material.texture is not None
-                        and mesh.uvs is not None and len(poly) == 3)
-            uvs_tri = mesh.uvs[tri] if textured else None
-            tex = material.texture if textured else None
-
             for k in range(1, len(poly) - 1):
-                cam_tri = [poly[0], poly[k], poly[k + 1]]
-                screen = [self._project(camera, c) for c in cam_tri]
+                pts = [poly[0], poly[k], poly[k + 1]]
+                screen = [camera.project_cam(p) for p in pts]
                 if any(s is None for s in screen):
                     continue
-                depths = [c[2] for c in cam_tri]
-                self.rasterize_triangle(screen, depths, shaded, texture=tex,
-                                        uvs=uvs_tri, intensity=intensity,
-                                        filter_mode=material.filter_mode)
+                screens.append([[s[0], s[1]] for s in screen])
+                depths.append([p[2] for p in pts])
+                intens.append(inten[idx])
+                if poly_attrs is not None:
+                    uv_list.append([poly_attrs[0], poly_attrs[k],
+                                    poly_attrs[k + 1]])
+        if not screens:
+            return
+        count = len(screens)
+        uvs = (np.array(uv_list, dtype=float) if uv_list
+               else np.empty((0, 3, 2)))
+        tex = (np.asarray(material.texture, dtype=np.uint8) if len(uvs)
+               else np.empty((0, 0, 3), dtype=np.uint8))
+        self._submit(np.array(screens, dtype=float)[:, :, 0],
+                     np.array(screens, dtype=float)[:, :, 1],
+                     np.array(depths, dtype=float),
+                     np.repeat(base[None, :], count, 0),
+                     np.array(intens, dtype=float), uvs, tex, len(uvs) > 0,
+                     material.filter_mode)
+        self.stats["rasterized"] += count
+
+    # ------------------------------------------------------------------
+    # Framebuffer output
+    # ------------------------------------------------------------------
 
     def surface(self):
         """Return the HxWx3 uint8 framebuffer for blitting."""
         return self.colorbuf
+
+    def depth_image(self):
+        """Banded false-colour depth buffer view for F3 (14.3).
+
+        Depth is shown on a logarithmic scale (near depths get more of the
+        ramp) and quantised into 16 bands with a thin dark edge, so surfaces
+        that are close in depth are still distinguishable.
+        """
+        depth = self.depthbuf
+        finite = np.isfinite(depth)
+        img = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        if not finite.any():
+            return img
+        dmin = float(depth[finite].min())
+        dmax = float(np.percentile(depth[finite], 99.9))
+        dmax = max(dmax, dmin + 1e-3)
+        safe = np.where(finite, np.maximum(depth, dmin), dmax)
+        span = math.log(dmax) - math.log(max(dmin, 1e-3))
+        t = (np.log(safe) - math.log(max(dmin, 1e-3))) / max(span, 1e-6)
+        t = np.clip(t, 0.0, 1.0)
+        bands = 14.0
+        q = np.floor(t * bands) / bands
+        frac = t * bands - np.floor(t * bands)
+        stops = np.array([[30, 80, 200], [40, 200, 150],
+                          [250, 200, 60], [240, 90, 40]], dtype=float)
+        pos = q * 3.0
+        idx = np.clip(pos.astype(int), 0, 2)
+        blend = np.clip(pos - idx, 0.0, 1.0)[..., None]
+        c0 = stops[idx]
+        c1 = stops[np.clip(idx + 1, 0, 3)]
+        color = c0 + (c1 - c0) * blend
+        edge = (frac < 0.12)[..., None]
+        color = np.where(edge, color * 0.45, color)
+        color[~finite] = 0.0
+        return np.clip(color, 0, 255).astype(np.uint8)

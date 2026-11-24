@@ -96,6 +96,31 @@ def test_bird_and_apple_distance():
     assert not collects_apple(worm, np.array([1.5, GROUND_Y, 0.0]))
 
 
+def test_jump_peak_matches_handbook():
+    # v0^2 / (2g) = 3.2^2 / 20 = 0.512 world units.
+    state = JumpState()
+    request_jump(state)
+    peak = state.y
+    dt = 0.001
+    for _ in range(2000):
+        update_jump(state, dt)
+        peak = max(peak, state.y)
+        if state.grounded:
+            break
+    assert abs((peak - GROUND_Y) - 0.512) < 0.01
+
+
+def test_jump_cannot_clear_a_wall_but_height_rule_is_explicit():
+    from physics import clears_wall, WALL_HEIGHT_WORLD
+    touching = np.array([2.5, GROUND_Y, 0.75])   # r + footprint overlap
+    assert not clears_wall(touching, 0.22)
+    # The rule itself: feet above the wall top means the footprint is ignored.
+    high = np.array([2.5, WALL_HEIGHT_WORLD + 0.22 + 0.01, 0.75])
+    assert clears_wall(high, 0.22)
+    assert not hits_any_wall(high, [WALL], 0.22)
+    assert hits_any_wall(touching, [WALL], 0.22)
+
+
 if __name__ == "__main__":
     test_wall_hit_inside()
     test_wall_clear_outside()
@@ -105,4 +130,6 @@ if __name__ == "__main__":
     test_jump_cooldown()
     test_water_only_when_grounded()
     test_bird_and_apple_distance()
+    test_jump_peak_matches_handbook()
+    test_jump_cannot_clear_a_wall_but_height_rule_is_explicit()
     print("M8/M9 physics tests OK")

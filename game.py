@@ -1,4 +1,4 @@
-﻿"""
+"""
 Level setup, apples, birds, scoring, timer and finish rules (handbook ch. 12).
 
 The original 2D rules are preserved: 4 apples to unlock the exit, birds follow
@@ -94,6 +94,7 @@ def build_level(level, seed=None, cols=COLS, rows=ROWS,
             "previous": cell,
             "recent": [cell],
             "yaw": 0.0,
+            "phase": rng.uniform(0.0, 2.0 * math.pi),
             "pos": cell_center_3d(cell[0], cell[1], BIRD_HEIGHT),
             "speed": BIRD_SPEED + rng.uniform(0.1, 0.5),
         })

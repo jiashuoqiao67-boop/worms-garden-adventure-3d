@@ -1,42 +1,46 @@
 [
   {
     "preset": "FAST",
-    "resolution": "819x512",
-    "triangles": 7092,
-    "render_ms_mean": 143.78,
-    "render_ms_median": 151.43,
-    "render_ms_min": 130.03,
-    "render_ms_max": 153.63,
-    "frames_per_s": 6.6
+    "resolution": "672x420",
+    "pixels": 282240,
+    "triangles": 6972,
+    "render_ms_mean": 12.35,
+    "render_ms_median": 12.26,
+    "render_ms_min": 11.32,
+    "render_ms_max": 14.45,
+    "frames_per_s": 81.5
   },
   {
     "preset": "BALANCED",
     "resolution": "1024x640",
-    "triangles": 7092,
-    "render_ms_mean": 135.11,
-    "render_ms_median": 135.64,
-    "render_ms_min": 129.82,
-    "render_ms_max": 139.81,
-    "frames_per_s": 7.4
+    "pixels": 655360,
+    "triangles": 6972,
+    "render_ms_mean": 18.58,
+    "render_ms_median": 18.2,
+    "render_ms_min": 17.35,
+    "render_ms_max": 21.46,
+    "frames_per_s": 54.9
   },
   {
     "preset": "HIGH",
-    "resolution": "1280x800",
-    "triangles": 7092,
-    "render_ms_mean": 159.83,
-    "render_ms_median": 158.92,
-    "render_ms_min": 141.55,
-    "render_ms_max": 180.36,
-    "frames_per_s": 6.3
+    "resolution": "1600x1000",
+    "pixels": 1600000,
+    "triangles": 6972,
+    "render_ms_mean": 34.41,
+    "render_ms_median": 34.47,
+    "render_ms_min": 33.74,
+    "render_ms_max": 35.61,
+    "frames_per_s": 29.0
   },
   {
     "preset": "NATIVE",
     "resolution": "1280x800",
-    "triangles": 7092,
-    "render_ms_mean": 168.5,
-    "render_ms_median": 174.56,
-    "render_ms_min": 148.62,
-    "render_ms_max": 178.27,
-    "frames_per_s": 5.7
+    "pixels": 1024000,
+    "triangles": 6972,
+    "render_ms_mean": 24.52,
+    "render_ms_median": 24.39,
+    "render_ms_min": 23.62,
+    "render_ms_max": 26.15,
+    "frames_per_s": 41.0
   }
 ]
