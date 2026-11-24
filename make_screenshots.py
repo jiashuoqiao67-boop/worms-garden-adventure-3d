@@ -240,6 +240,26 @@ def _ground_closeup(filter_mode):
     return renderer
 
 
+def near_plane_scene(width=1280, height=800):
+    """Camera close to walls and floor: triangles cross the near plane.
+
+    Handbook 7 requires clipping instead of projection for such triangles;
+    the caption reports how many triangles actually took that path.
+    """
+    from camera import Camera
+    from main import build_static_scene, draw_static
+    state = build_level(1, seed=12)
+    state["position"] = cell_center_3d(11, 7, 0.22)
+    mats = _materials("nearest")
+    renderer = Renderer(width, height, background=SKY_BG, sky_grad=SKY_GRAD)
+    renderer.clear()
+    cam = Camera(eye=(11.5, 0.55, 9.6), target=(11.5, 0.42, 5.0),
+                 projection="perspective", width=width, height=height)
+    scene = build_static_scene(state)
+    draw_static(renderer, cam, scene, mats)
+    return renderer
+
+
 def main():
     pygame.init()
     pygame.display.set_mode((1, 1))
@@ -339,6 +359,17 @@ def main():
                            "(near = blue, far = orange)",
                            "shows which surfaces are nearest"),
              {"MAIN_VIEW": 1, "MAIN_DEPTH": 1})
+
+    # --- Near-plane safety ----------------------------------------------
+    r = near_plane_scene()
+    save_captioned(
+        Image.fromarray(r.surface()), "19_near_plane.png",
+        _caption_line(
+            "Near-plane safety: camera 0.55 units above the floor, hugging a "
+            "corridor wall",
+            f"{r.stats['clipped']} triangles crossed the near plane and were "
+            "clipped (Sutherland-Hodgman) before projection",
+            "no giant inverted polygons, no smearing"))
 
     # --- Window resize test ---------------------------------------------
     hud_shot("17_resize_wide.png",

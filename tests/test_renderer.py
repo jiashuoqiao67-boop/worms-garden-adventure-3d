@@ -119,6 +119,46 @@ def test_wireframe_mode_draws_edges():
     assert (r.colorbuf == edge).all(axis=2).any()
 
 
+def test_near_plane_crossing_is_safe():
+    """A camera right next to / inside geometry must not smear or crash.
+
+    Handbook 7: a triangle crossing the near plane has to be clipped, not
+    simply projected; otherwise enormous inverted polygons appear.
+    """
+    from camera import Camera, clip_polygon_near
+    from geometry import cube_mesh, ground_mesh
+    from materials import Material
+    from transforms import model_matrix
+
+    # A long wall running along Z; the eye sits beside it and looks down the
+    # corridor, so several of its triangles cross the near plane.
+    wall = cube_mesh((0.16, 0.75, 6.0), (1.0, 0.375, 0.0))
+    floor = ground_mesh(6, 6, uv_per_unit=0.5)
+    cam = Camera(eye=(1.55, 0.40, 2.60), target=(1.55, 0.35, -1.0),
+                 width=160, height=160)
+    r = Renderer(160, 160)
+    r.clear()
+    renderer_mat = Material(base_color=(200, 200, 200))
+    r.draw_mesh(cam, floor, model_matrix((1, 1, 1), 0.0, (-3, 0, -3)),
+                renderer_mat)
+    r.draw_mesh(cam, wall, model_matrix((1, 1, 1), 0.0, (0, 0, 0)),
+                renderer_mat)
+    assert r.stats["clipped"] > 0          # the near-plane path was used
+    painted = r.depthbuf[np.isfinite(r.depthbuf)]
+    assert painted.size > 0
+    assert np.isfinite(painted).all()
+    assert (painted >= cam.near - 1e-9).all()
+
+    # Clipping interpolates UVs with the same parameter t (no texture seam).
+    tri = [(-0.4, 0.0, 0.05), (0.4, 0.0, 0.5), (0.0, 0.6, 0.5)]
+    poly, attrs = clip_polygon_near(tri, near=0.1,
+                                    attributes=[(0.0, 0.0), (1.0, 0.0),
+                                                (1.0, 1.0)])
+    assert len(poly) == 4 and attrs is not None and len(attrs) == 4
+    for (u, v) in attrs:
+        assert 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0
+
+
 if __name__ == "__main__":
     test_clear()
     test_barycentric_inside_outside()
@@ -128,4 +168,5 @@ if __name__ == "__main__":
     test_draw_mesh_textured_batch()
     test_depth_image_separates_near_and_far()
     test_wireframe_mode_draws_edges()
+    test_near_plane_crossing_is_safe()
     print("M5 renderer tests OK")

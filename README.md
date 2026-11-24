@@ -1,4 +1,4 @@
-# Worm's Garden Adventure 3D
+﻿# Worm's Garden Adventure 3D
 
 Computer Graphics Programming (GEIAL31L-B2a) - Labs 10 & 11 (final assignment,
 20 % of the course grade).
@@ -95,7 +95,7 @@ bottom-right corridor minimap (walls, apples, birds, worm, start, exit).
 | `tools/build_report.py` | Rebuilds `report/Worms_Garden_Adventure_3D_Report.docx` |
 | `tools/make_demo_video.py` | Renders `report/demo_video.mp4` (2:18, 1280x720, 24 fps) |
 | `tests/` | 12 self-contained numerical and gameplay checks |
-| `screenshots/` | Labelled evidence images (18 files) |
+| `screenshots/` | Labelled evidence images (19 files) |
 | `results/` | Measured performance table |
 | `report/` | Technical report (DOCX, 10 pages) and demo recording |
 
@@ -178,14 +178,14 @@ Limitation: no mipmaps, so minified distant textures still alias.
 |---|---|
 | Technical report, 10 pages (DOCX) | `report/Worms_Garden_Adventure_3D_Report.docx` |
 | Demo recording, 2:18, 1280x720, 24 fps | `report/demo_video.mp4` |
-| Screenshots, 18 labelled images | `screenshots/` |
+| Screenshots, 19 labelled images | `screenshots/` |
 | Performance table | `results/benchmark.txt`, `results/benchmark.json` |
 | Unit/integration tests | `tests/` |
 
 Screenshot index: 01 wireframe cube, 02 perspective, 03 orthographic,
 04 occlusion, 05 textured close view, 06 gameplay with HUD, 07 FAST / 08 HIGH
 resolution, 09/10 fog off/heavy, 11/12 nearest/bilinear, 13/14 texture zoom,
-15 F1 wireframe, 16 F3 depth, 17/18 wide/narrow window resize.
+15 F1 wireframe, 16 F3 depth, 17/18 wide/narrow window resize, 19 near-plane safety.
 
 ## External code / assets
 
@@ -199,3 +199,4 @@ resolution, 09/10 fog off/heavy, 11/12 nearest/bilinear, 13/14 texture zoom,
 - Runtime dependencies: NumPy, Pillow, Pygame (see `requirements.txt`).
   Optional: Numba. Build-time only: python-docx, imageio, imageio-ffmpeg.
 - No game engine, GPU renderer or third-party 3D mesh library is used.
+

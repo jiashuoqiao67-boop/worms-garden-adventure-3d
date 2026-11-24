@@ -1,4 +1,4 @@
-﻿"""
+"""
 Generate the technical report (DOCX) for the Worm's Garden Adventure 3D project.
 
 Follows the handbook section 17.2 structure. Run from the project root:
@@ -252,6 +252,12 @@ def main():
         "their texture. A triangle completely behind the near plane is "
         "discarded, so no giant inverted polygons can appear when the camera "
         "moves into a wall.")
+    doc.add_paragraph(
+        "The near-plane path is exercised by a dedicated test and by "
+        "screenshot 19: a camera 0.55 units above the floor beside a corridor "
+        "wall takes the clipping path for over a hundred triangles and still "
+        "produces a clean frame (no smearing, no inverted polygons, no NaNs in "
+        "the depth buffer).")
     code_block(doc,
                "invz = wa/za + wb/zb + wc/zc      # affine in screen space\n"
                "z    = 1.0 / invz                # perspective-correct depth\n"

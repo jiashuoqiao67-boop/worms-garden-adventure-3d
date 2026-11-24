@@ -1,4 +1,4 @@
-r"""
+﻿r"""
 M10 self-check: level setup, apples, birds, scoring and finish rules.
 
 Run from the project root:
@@ -97,6 +97,71 @@ def test_birds_update_stay_in_bounds():
         assert 0 <= bird["pos"][2] <= 15
 
 
+def _bfs(maze, start, goal):
+    from collections import deque
+    from maze import get_available_neighbors, COLS, ROWS
+    queue = deque([start])
+    prev = {start: None}
+    while queue:
+        cell = queue.popleft()
+        if cell == goal:
+            break
+        for nxt in get_available_neighbors(maze, cell, COLS, ROWS):
+            if nxt not in prev:
+                prev[nxt] = cell
+                queue.append(nxt)
+    path = []
+    cell = goal
+    while cell is not None:
+        path.append(cell)
+        cell = prev[cell]
+    return list(reversed(path))
+
+
+def test_walk_start_to_finish_with_real_collision_then_level_completes():
+    """Integration: walk the maze with the real collision code, then finish.
+
+    This is the same sequence the game loop runs (move_xz -> collect ->
+    check_finish -> complete_level), so it catches corridor, collider and
+    level-rule regressions that isolated unit tests would miss.
+    """
+    from physics import move_xz, hits_any_wall, WORM_RADIUS
+    from maze import get_available_neighbors, COLS, ROWS
+
+    state = build_level(1, seed=3)
+    path = _bfs(state["maze"], START_CELL, FINISH_CELL)
+    assert path[0] == START_CELL and path[-1] == FINISH_CELL
+    boxes = state["wall_boxes"]
+    dt = 1.0 / 30.0
+    for cell in path[1:]:
+        target = cell_center_3d(cell[0], cell[1], GROUND_Y)
+        for _ in range(30):
+            delta = target - state["position"]
+            delta[1] = 0.0
+            dist = float(np.linalg.norm(delta))
+            if dist < 0.05:
+                break
+            # Do not overshoot the waypoint: cap the speed to the remaining
+            # distance for this frame.
+            speed = min(4.6, dist / dt)
+            move_xz(state["position"], delta, speed, dt, boxes, WORM_RADIUS)
+        assert not hits_any_wall(state["position"], boxes, WORM_RADIUS)
+        dist = np.linalg.norm(state["position"][[0, 2]] - target[[0, 2]])
+        assert dist < 0.08, (cell, state["position"], dist)
+
+    for apple in state["apples"]:
+        collect_apple(state, apple)
+    assert state["score"] == 250 and state["collected"] == APPLE_COUNT
+    state["position"] = cell_center_3d(FINISH_CELL[0], FINISH_CELL[1], GROUND_Y)
+    assert check_finish(state)
+    nxt = complete_level(state)
+    assert nxt["level"] == 2
+    assert nxt["score"] == 250
+    assert nxt["collected"] == 0
+    assert len(nxt["apples"]) == APPLE_COUNT
+    assert nxt["maze"] is not state["maze"]
+
+
 if __name__ == "__main__":
     test_level_spawn_counts()
     test_start_finish_not_blocked()
@@ -106,4 +171,6 @@ if __name__ == "__main__":
     test_complete_level_keeps_score()
     test_reset_player_returns_to_start()
     test_birds_update_stay_in_bounds()
+    test_walk_start_to_finish_with_real_collision_then_level_completes()
     print("M10 game rules tests OK")
+
